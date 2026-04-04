@@ -10,15 +10,22 @@ class NetMonitor: ObservableObject {
     @Published var upSpeed: String = "—"
     var onChange: (() -> Void)?
 
+    /// History for chart (last 60s, 2s interval = 30 points)
+    private(set) var downHistory: [Double] = []
+    private(set) var upHistory: [Double] = []
+    let maxHistory = 30
+
     private var lastStats = NetStats()
     private var timer: Timer?
     private let interval: TimeInterval = 2.0
 
     init() {
         lastStats = readStats()
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             self?.update()
         }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     private func update() {
@@ -32,6 +39,14 @@ class NetMonitor: ObservableObject {
         DispatchQueue.main.async {
             self.downSpeed = self.formatSpeed(perSecIn)
             self.upSpeed = self.formatSpeed(perSecOut)
+
+            self.downHistory.append(perSecIn)
+            self.upHistory.append(perSecOut)
+            if self.downHistory.count > self.maxHistory {
+                self.downHistory.removeFirst()
+                self.upHistory.removeFirst()
+            }
+
             self.onChange?()
         }
 
