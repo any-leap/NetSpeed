@@ -77,9 +77,10 @@ class CPUMonitor {
         sustainedCounts = sustainedCounts.filter { activePids.contains($0.key) }
         abnormalProcesses = abnormal
 
-        // Check watched processes
+        // Check watched processes (use pgrep instead of top-N list, since
+        // low-CPU daemons like bird may not appear in the top 200)
         for name in watchedProcesses {
-            let alive = allProcs.contains { $0.name == name }
+            let alive = isProcessRunning(name: name)
             if !alive {
                 if lastAlertTime["__watch_\(name)"] == nil {
                     addAlert("\(name) is NOT running — iCloud sync may be affected")
@@ -101,6 +102,17 @@ class CPUMonitor {
         let record = AlertRecord(time: formatter.string(from: Date()), message: message)
         recentAlerts.insert(record, at: 0)
         if recentAlerts.count > 20 { recentAlerts.removeLast() }
+    }
+
+    private func isProcessRunning(name: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        process.arguments = ["-x", name]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return false }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
     }
 
     private func sendNotification(title: String, message: String) {
