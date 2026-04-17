@@ -7,6 +7,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var cpuMonitor: CPUMonitor
     private var trafficMonitor: TrafficMonitor
     private var memMonitor: MemoryMonitor
+    private var vpnMonitor: VPNMonitor
     private var menu: NSMenu
     private var guardTimer: Timer?
     private var menuIsOpen = false
@@ -17,6 +18,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         cpuMonitor = CPUMonitor()
         trafficMonitor = TrafficMonitor()
         memMonitor = MemoryMonitor()
+        vpnMonitor = VPNMonitor()
         menu = NSMenu()
 
         super.init()
@@ -24,9 +26,17 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
 
+        vpnMonitor.onDisconnect = { [weak self] in
+            self?.sendNotification(
+                title: "VPN Disconnected",
+                message: "OpenVPN connection has been lost"
+            )
+        }
+
         netMonitor.onChange = { [weak self] in
             self?.cpuMonitor.update()
             self?.memMonitor.update()
+            self?.vpnMonitor.update()
             self?.updateLabel()
             if self?.menuIsOpen == true {
                 self?.rebuildMenu()
@@ -108,6 +118,70 @@ class StatusBarController: NSObject, NSMenuDelegate {
             chartItem.image = chartImage
             chartItem.isEnabled = false
             menu.addItem(chartItem)
+        }
+
+        // --- VPN Status ---
+        menu.addItem(NSMenuItem.separator())
+        let vpn = vpnMonitor.status
+        if vpn.connected {
+            let vpnHeader = "\(L10n.vpn): \(L10n.vpnConnected)"
+            addHeader(vpnHeader, font: headerFont)
+
+            if let ip = vpn.localIP, let iface = vpn.interfaceName {
+                let detailStr = "  \(iface)  \(ip)"
+                let item = NSMenuItem(title: detailStr, action: nil, keyEquivalent: "")
+                item.isEnabled = false
+                item.attributedTitle = NSAttributedString(string: detailStr, attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
+                    .foregroundColor: NSColor.systemGreen,
+                ])
+                menu.addItem(item)
+            }
+
+            let speedStr = "  ↓ \(VPNMonitor.formatSpeed(vpnMonitor.speedIn))  ↑ \(VPNMonitor.formatSpeed(vpnMonitor.speedOut))"
+            let speedItem = NSMenuItem(title: speedStr, action: nil, keyEquivalent: "")
+            speedItem.isEnabled = false
+            speedItem.attributedTitle = NSAttributedString(string: speedStr, attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ])
+            menu.addItem(speedItem)
+
+            let totalStr = "  ↓ \(VPNMonitor.formatBytes(vpn.bytesIn))  ↑ \(VPNMonitor.formatBytes(vpn.bytesOut))"
+            let totalItem = NSMenuItem(title: totalStr, action: nil, keyEquivalent: "")
+            totalItem.isEnabled = false
+            totalItem.attributedTitle = NSAttributedString(string: totalStr, attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
+                .foregroundColor: NSColor.tertiaryLabelColor,
+            ])
+            menu.addItem(totalItem)
+
+            let disconnectLabel = L10n.vpnDisconnectAction
+            let disconnectItem = NSMenuItem(title: disconnectLabel, action: #selector(toggleVPN), keyEquivalent: "")
+            disconnectItem.target = self
+            disconnectItem.attributedTitle = NSAttributedString(string: "  \(disconnectLabel)", attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor.systemRed,
+            ])
+            menu.addItem(disconnectItem)
+        } else {
+            let vpnHeader = "\(L10n.vpn): \(L10n.vpnDisconnected)"
+            let item = NSMenuItem(title: vpnHeader, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            item.attributedTitle = NSAttributedString(string: vpnHeader, attributes: [
+                .font: headerFont,
+                .foregroundColor: NSColor.systemRed,
+            ])
+            menu.addItem(item)
+
+            let connectLabel = L10n.vpnConnectAction
+            let connectItem = NSMenuItem(title: connectLabel, action: #selector(toggleVPN), keyEquivalent: "")
+            connectItem.target = self
+            connectItem.attributedTitle = NSAttributedString(string: "  \(connectLabel)", attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor.systemGreen,
+            ])
+            menu.addItem(connectItem)
         }
 
         // --- Traffic by Process ---
@@ -476,6 +550,73 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
         cpuMonitor.update()
         rebuildMenu()
+    }
+
+    private static let vpnConfigKey = "vpnConfigPath"
+    private static let vpnAuthKey = "vpnAuthPath"
+
+    private var vpnConfigPath: String? {
+        UserDefaults.standard.string(forKey: Self.vpnConfigKey)
+    }
+
+    private var vpnAuthPath: String {
+        UserDefaults.standard.string(forKey: Self.vpnAuthKey)
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".openvpn-auth").path
+    }
+
+    private func promptForVPNConfig() -> String? {
+        let panel = NSOpenPanel()
+        panel.title = "Select OpenVPN config (.ovpn)"
+        panel.allowedContentTypes = []
+        panel.allowsOtherFileTypes = true
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        UserDefaults.standard.set(url.path, forKey: Self.vpnConfigKey)
+        return url.path
+    }
+
+    private func shellQuote(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    @objc func toggleVPN() {
+        if vpnMonitor.status.connected {
+            let script = "do shell script \"killall openvpn\" with administrator privileges"
+            var error: NSDictionary?
+            if let appleScript = NSAppleScript(source: script) {
+                appleScript.executeAndReturnError(&error)
+            }
+        } else {
+            guard let configPath = vpnConfigPath ?? promptForVPNConfig() else { return }
+            let cfg = shellQuote(configPath)
+            let auth = shellQuote(vpnAuthPath)
+            let cmd = "/opt/homebrew/sbin/openvpn --daemon --log /tmp/openvpn.log --config \(cfg) --auth-user-pass \(auth)"
+            let escaped = cmd.replacingOccurrences(of: "\\", with: "\\\\")
+                             .replacingOccurrences(of: "\"", with: "\\\"")
+            let script = "do shell script \"\(escaped)\" with administrator privileges"
+            var error: NSDictionary?
+            if let appleScript = NSAppleScript(source: script) {
+                appleScript.executeAndReturnError(&error)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.vpnMonitor.update()
+            self?.rebuildMenu()
+        }
+    }
+
+    private func sendNotification(title: String, message: String) {
+        let escapedTitle = title.replacingOccurrences(of: "\"", with: "\\\"")
+        let escapedMessage = message.replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "display notification \"\(escapedMessage)\" with title \"\(escapedTitle)\" sound name \"Sosumi\""
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        try? process.run()
+        process.waitUntilExit()
     }
 
     @objc func quit() {
