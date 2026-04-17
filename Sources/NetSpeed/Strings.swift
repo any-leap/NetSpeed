@@ -36,12 +36,24 @@ struct L10n {
     static let pressure_critical = isChinese ? "危险" : "Critical"
 
     static func sinceDuration(_ seconds: Int) -> String {
-        let m = seconds / 60
+        let d = seconds / 86400
+        let h = (seconds % 86400) / 3600
+        let m = (seconds % 3600) / 60
         let s = seconds % 60
         if isChinese {
-            return "\(m)分\(s)秒前重置"
+            let body: String
+            if d > 0 { body = "\(d)天\(h)小时" }
+            else if h > 0 { body = "\(h)小时\(m)分" }
+            else if m > 0 { body = "\(m)分\(s)秒" }
+            else { body = "\(s)秒" }
+            return "\(body)前重置"
         } else {
-            return "since \(m)m\(s)s ago"
+            let body: String
+            if d > 0 { body = "\(d)d\(h)h" }
+            else if h > 0 { body = "\(h)h\(m)m" }
+            else if m > 0 { body = "\(m)m\(s)s" }
+            else { body = "\(s)s" }
+            return "since \(body) ago"
         }
     }
 }
