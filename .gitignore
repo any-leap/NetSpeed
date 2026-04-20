@@ -2,3 +2,5 @@
 .swiftpm/
 *.ovpn
 .openvpn-auth
+.DS_Store
+dist/
