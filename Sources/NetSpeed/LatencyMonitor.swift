@@ -44,8 +44,8 @@ final class LatencyMonitor: NSObject, URLSessionTaskDelegate {
 
     func start() {
         stop()
-        tick()  // 立即跑一次，不用等 10 秒才出第一个数据点
-        let t = Timer(timeInterval: 10.0, repeats: true) { [weak self] _ in
+        tick()  // 立即跑一次，不用等 5 秒才出第一个数据点
+        let t = Timer(timeInterval: 5.0, repeats: true) { [weak self] _ in
             self?.tick()
         }
         RunLoop.main.add(t, forMode: .common)
