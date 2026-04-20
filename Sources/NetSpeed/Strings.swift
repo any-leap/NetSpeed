@@ -6,7 +6,7 @@ struct L10n {
         return lang.hasPrefix("zh")
     }()
 
-    static let network = isChinese ? "网络" : "Network"
+    static let network = isChinese ? "网络流量" : "Network Traffic"
     static let latencyMainland = isChinese ? "大陆延迟" : "Mainland Latency"
     static let latencyOverseas = isChinese ? "海外延迟" : "Overseas Latency"
     static let trafficByProcess = isChinese ? "流量排行" : "Traffic by Process"

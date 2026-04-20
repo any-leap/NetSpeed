@@ -14,7 +14,7 @@ final class LatencyChartView: NSView {
         self.maxHistory = maxHistory
         self.title = title
         self.lineColor = lineColor
-        super.init(frame: NSRect(x: 0, y: 0, width: 260, height: 90))
+        super.init(frame: NSRect(x: 0, y: 0, width: 260, height: 60))
         autoresizingMask = [.width]
     }
 
@@ -33,8 +33,8 @@ final class LatencyChartView: NSView {
         let h = bounds.height
         let left: CGFloat = 8
         let right: CGFloat = 8
-        let top: CGFloat = 20
-        let bottom: CGFloat = 6
+        let top: CGFloat = 18
+        let bottom: CGFloat = 4
         let chartW = w - left - right
         let chartH = h - top - bottom
 
