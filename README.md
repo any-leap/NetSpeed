@@ -26,23 +26,22 @@ A lightweight macOS menu bar system monitor. Displays real-time network speed, C
 **Localization**
 - Auto-detects system language (Chinese / English)
 
-## Build
+## Build & Install
 
 ```bash
-swift build -c release
+make install    # build, sign, install LaunchAgent, start
 ```
 
-## Install
+Other targets:
 
 ```bash
-# Link to PATH (optional, for CLI)
-mkdir -p ~/bin
-ln -sf $(pwd)/.build/release/NetSpeed ~/bin/netspeed
-
-# Auto-start on login
-cp com.t3st.netspeed.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.t3st.netspeed.plist
+make reload     # rebuild + restart (dev loop)
+make logs       # last 50 lines of stderr
+make tail       # follow stderr live
+make uninstall  # remove LaunchAgent
 ```
+
+Logs are at `/tmp/netspeed.log` and `/tmp/netspeed.err`.
 
 ## License
 
