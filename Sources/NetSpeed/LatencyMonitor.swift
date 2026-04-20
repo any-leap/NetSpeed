@@ -77,7 +77,9 @@ final class LatencyMonitor {
         onUpdate?()
     }
 
-    /// 对单个目标做 TCP 半握手计时。成功返回 RTT（ms），失败/超时返回 nil。
+    /// 对单个目标做 TLS 建连计时（TCP + TLS 握手）。
+    /// 使用 TLS 是为了在 Clash TUN 模式下测到真实端到端延迟——纯 TCP 握手会被
+    /// TUN 本地短路，而 TLS 握手必须与真实服务器交换证书，无法伪造。
     /// completion 一定在 probeQueue 上回调，且至多一次。
     private func probe(_ target: Target, completion: @escaping (Double?) -> Void) {
         guard let port = NWEndpoint.Port(rawValue: target.port) else {
@@ -85,7 +87,7 @@ final class LatencyMonitor {
             return
         }
         let host = NWEndpoint.Host(target.host)
-        let conn = NWConnection(host: host, port: port, using: .tcp)
+        let conn = NWConnection(host: host, port: port, using: .tls)
         let start = Date()
         var fired = false
 
@@ -110,7 +112,7 @@ final class LatencyMonitor {
 
         conn.start(queue: probeQueue)
 
-        probeQueue.asyncAfter(deadline: .now() + 2.0) {
+        probeQueue.asyncAfter(deadline: .now() + 3.0) {
             fire(nil)
         }
     }
