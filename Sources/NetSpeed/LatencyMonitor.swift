@@ -29,7 +29,40 @@ final class LatencyMonitor {
         stop()
     }
 
-    func start() { /* 在后续 task 填充 */ }
+    func start() {
+        stop()
+        tick()  // 立即跑一次，不用等 5 秒才出第一个数据点
+        let t = Timer(timeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.tick()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    private func tick() {
+        let group = DispatchGroup()
+        var results: [Double] = []
+        let lock = NSLock()
+
+        for target in targets {
+            group.enter()
+            probe(target) { value in
+                if let v = value {
+                    lock.lock()
+                    results.append(v)
+                    lock.unlock()
+                }
+                group.leave()
+            }
+        }
+
+        group.notify(queue: .main) { [weak self] in
+            guard let self = self else { return }
+            let best = results.min()
+            self.appendResult(best)
+        }
+    }
+
     func stop() {
         timer?.invalidate()
         timer = nil
