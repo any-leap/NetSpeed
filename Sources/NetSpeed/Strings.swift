@@ -7,6 +7,8 @@ struct L10n {
     }()
 
     static let network = isChinese ? "网络" : "Network"
+    static let latencyMainland = isChinese ? "大陆延迟" : "Mainland Latency"
+    static let latencyOverseas = isChinese ? "海外延迟" : "Overseas Latency"
     static let trafficByProcess = isChinese ? "流量排行" : "Traffic by Process"
     static let trafficLive = isChinese ? "实时" : "Live"
     static let trafficCumulative = isChinese ? "累计" : "Total"
