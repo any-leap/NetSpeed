@@ -1,10 +1,8 @@
 import Foundation
-import Network
 
 final class LatencyMonitor {
     struct Target {
-        let host: String
-        let port: UInt16
+        let url: URL
     }
 
     let name: String
@@ -17,22 +15,30 @@ final class LatencyMonitor {
     var onUpdate: (() -> Void)?
 
     private var timer: Timer?
-    private let probeQueue = DispatchQueue(label: "netspeed.latency", qos: .utility)
+    private let session: URLSession
 
-    init(name: String, targets: [(String, UInt16)], maxHistory: Int = 60) {
+    init(name: String, targets: [String], maxHistory: Int = 60) {
         self.name = name
-        self.targets = targets.map { Target(host: $0.0, port: $0.1) }
+        self.targets = targets.compactMap { URL(string: $0).map(Target.init) }
         self.maxHistory = maxHistory
+
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 3.0
+        config.timeoutIntervalForResource = 3.0
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.waitsForConnectivity = false
+        self.session = URLSession(configuration: config)
     }
 
     deinit {
         stop()
+        session.invalidateAndCancel()
     }
 
     func start() {
         stop()
-        tick()  // 立即跑一次，不用等 5 秒才出第一个数据点
-        let t = Timer(timeInterval: 5.0, repeats: true) { [weak self] _ in
+        tick()  // 立即跑一次，不用等 10 秒才出第一个数据点
+        let t = Timer(timeInterval: 10.0, repeats: true) { [weak self] _ in
             self?.tick()
         }
         RunLoop.main.add(t, forMode: .common)
@@ -77,43 +83,22 @@ final class LatencyMonitor {
         onUpdate?()
     }
 
-    /// 对单个目标做 TLS 建连计时（TCP + TLS 握手）。
-    /// 使用 TLS 是为了在 Clash TUN 模式下测到真实端到端延迟——纯 TCP 握手会被
-    /// TUN 本地短路，而 TLS 握手必须与真实服务器交换证书，无法伪造。
-    /// completion 一定在 probeQueue 上回调，且至多一次。
+    /// HTTP HEAD via shared URLSession. 连接复用：首次请求包含 TCP + TLS 握手，
+    /// 之后 keepalive 的 HTTP HEAD 仅约 100 字节，测的是应用层 RTT。
+    /// 相比裸 TLS 握手，流量降 ~100×；URLSession 自带浏览器指纹，不易被 DPI/WAF 识别。
     private func probe(_ target: Target, completion: @escaping (Double?) -> Void) {
-        guard let port = NWEndpoint.Port(rawValue: target.port) else {
-            completion(nil)
-            return
-        }
-        let host = NWEndpoint.Host(target.host)
-        let conn = NWConnection(host: host, port: port, using: .tls)
+        var request = URLRequest(url: target.url)
+        request.httpMethod = "HEAD"
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         let start = Date()
-        var fired = false
-
-        let fire: (Double?) -> Void = { value in
-            if fired { return }
-            fired = true
-            conn.cancel()
-            completion(value)
-        }
-
-        conn.stateUpdateHandler = { state in
-            switch state {
-            case .ready:
-                let ms = Date().timeIntervalSince(start) * 1000.0
-                fire(ms)
-            case .failed, .cancelled:
-                fire(nil)
-            default:
-                break
+        let task = session.dataTask(with: request) { _, response, error in
+            if error != nil || response == nil {
+                completion(nil)
+                return
             }
+            let ms = Date().timeIntervalSince(start) * 1000.0
+            completion(ms)
         }
-
-        conn.start(queue: probeQueue)
-
-        probeQueue.asyncAfter(deadline: .now() + 3.0) {
-            fire(nil)
-        }
+        task.resume()
     }
 }

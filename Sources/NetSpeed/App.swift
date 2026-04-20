@@ -28,14 +28,14 @@ class StatusBarController: NSObject, NSMenuDelegate {
         memMonitor = MemoryMonitor()
         vpnMonitor = VPNMonitor()
         latencyMonitorCN = LatencyMonitor(name: "mainland", targets: [
-            ("www.baidu.com", 443),
-            ("www.taobao.com", 443),
-            ("www.qq.com", 443),
+            "https://www.baidu.com/favicon.ico",
+            "https://www.taobao.com/favicon.ico",
+            "https://www.qq.com/favicon.ico",
         ])
         latencyMonitorIntl = LatencyMonitor(name: "overseas", targets: [
-            ("www.google.com", 443),
-            ("www.cloudflare.com", 443),
-            ("www.github.com", 443),
+            "https://www.gstatic.com/generate_204",
+            "https://www.cloudflare.com/cdn-cgi/trace",
+            "https://www.github.com/favicon.ico",
         ])
         menu = NSMenu()
 
