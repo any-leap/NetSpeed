@@ -49,10 +49,11 @@ LatencyMonitor(
 - `var onUpdate: (() -> Void)?` — 每次测量完成后回调（用于通知 UI 刷新）
 
 **行为：**
-- 启动时立即开始一个 `Timer.scheduledTimer(withTimeInterval: 5, repeats: true)`
-- 每个 tick：并发发起 N 个探测（`DispatchGroup` 或 Swift concurrency），收集结果，取最小值追加到 history
+- 启动时创建 `Timer(timeInterval: 5, ..., repeats: true)`，通过 `RunLoop.main.add(timer, forMode: .common)` 注册，确保**菜单打开（tracking mode）时也继续触发**
+- 每个 tick：用 `DispatchGroup` 并发发起 N 个探测，全部回调后在 group.notify 中取最小值追加到 history
 - 所有探测均失败 → append nil
 - 单个探测使用 `NWConnection`，超时 2 秒，`state == .ready` 时记下耗时并 cancel
+- 所有 history 写入和 onUpdate 回调必须切回 main queue，避免 UI 线程竞争
 
 **单次 TCP 探测实现细节：**
 - 使用 `Network.framework` 的 `NWConnection(host:port:using: .tcp)`
