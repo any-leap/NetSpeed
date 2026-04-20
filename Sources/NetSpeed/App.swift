@@ -11,6 +11,10 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var menu: NSMenu
     private var guardTimer: Timer?
     private var menuIsOpen = false
+    private weak var chartView: ChartView?
+    private weak var trafficRankView: TrafficRankView?
+    private var liveRefreshers: [() -> Void] = []
+    private var structureSignature: String = ""
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -39,7 +43,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
             self?.vpnMonitor.update()
             self?.updateLabel()
             if self?.menuIsOpen == true {
-                self?.rebuildMenu()
+                self?.refreshLiveViews()
             }
         }
 
@@ -106,8 +110,50 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menuIsOpen = false
     }
 
+    private func refreshLiveViews() {
+        trafficMonitor.update()
+        if currentStructureSignature() != structureSignature {
+            rebuildMenu()
+            return
+        }
+        chartView?.update(
+            downData: netMonitor.downHistory,
+            upData: netMonitor.upHistory,
+            downLabel: "↓ \(netMonitor.downSpeed)",
+            upLabel: "↑ \(netMonitor.upSpeed)"
+        )
+        trafficRankView?.update(
+            liveTop: trafficMonitor.topByLive,
+            cumulativeTop: trafficMonitor.topByCumulative
+        )
+        for r in liveRefreshers { r() }
+    }
+
+    private func currentStructureSignature() -> String {
+        let vpn = vpnMonitor.status.connected ? "VC" : "VD"
+        let vpnHasIP = (vpnMonitor.status.localIP != nil && vpnMonitor.status.interfaceName != nil) ? "1" : "0"
+        let memCount = memMonitor.topProcesses.count
+        let cpuCount = cpuMonitor.topProcesses.count
+        let chartReady = netMonitor.downHistory.count >= 2 ? "1" : "0"
+        let watchedAlive = watchedAliveMask()
+        // abnormalCount and alertCount intentionally excluded — those sections
+        // refresh on next menu open; changing them mid-open would force a rebuild/flash.
+        return "\(vpn)\(vpnHasIP)|\(memCount)|\(cpuCount)|\(chartReady)|\(watchedAlive)"
+    }
+
+    private var cachedWatchedProcs: [TopProcess] = []
+    private func watchedAliveMask() -> String {
+        let procs = cpuMonitor.readTopProcesses(count: 500)
+        cachedWatchedProcs = procs
+        return cpuMonitor.watchedProcesses.map { name in
+            procs.contains(where: { $0.name == name }) ? "1" : "0"
+        }.joined()
+    }
+
     private func rebuildMenu() {
         menu.removeAllItems()
+        liveRefreshers = []
+        structureSignature = currentStructureSignature()
 
         let headerFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
         let bodyFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
@@ -126,7 +172,35 @@ class StatusBarController: NSObject, NSMenuDelegate {
             )
             chartItem.view = chartView
             chartItem.isEnabled = false
+            self.chartView = chartView
             menu.addItem(chartItem)
+        }
+
+        // --- Watched processes (e.g. bird) ---
+        menu.addItem(NSMenuItem.separator())
+        let watchedProcs = cpuMonitor.readTopProcesses(count: 500)
+        for name in cpuMonitor.watchedProcesses {
+            let proc = watchedProcs.first { $0.name == name }
+            let alive = proc != nil
+            let status = alive ? "✓ \(name) \(L10n.running)" : "✗ \(name) \(L10n.notRunning)"
+            let color: NSColor = alive ? .systemGreen : .systemRed
+            let item = NSMenuItem(title: "  \(status)", action: nil, keyEquivalent: "")
+            item.attributedTitle = NSAttributedString(string: "  \(status)", attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: color,
+            ])
+            if let proc = proc {
+                let sub = NSMenu()
+                let restartLabel = L10n.isChinese ? "重启 \(name)" : "Restart \(name)"
+                let killItem = NSMenuItem(title: restartLabel, action: #selector(killProcess(_:)), keyEquivalent: "")
+                killItem.target = self
+                killItem.tag = proc.pid
+                sub.addItem(killItem)
+                item.submenu = sub
+            } else {
+                item.isEnabled = false
+            }
+            menu.addItem(item)
         }
 
         // --- VPN Status ---
@@ -147,23 +221,28 @@ class StatusBarController: NSObject, NSMenuDelegate {
                 menu.addItem(item)
             }
 
-            let speedStr = "  ↓ \(VPNMonitor.formatSpeed(vpnMonitor.speedIn))  ↑ \(VPNMonitor.formatSpeed(vpnMonitor.speedOut))"
-            let speedItem = NSMenuItem(title: speedStr, action: nil, keyEquivalent: "")
+            let speedFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+            let speedItem = NSMenuItem()
             speedItem.isEnabled = false
-            speedItem.attributedTitle = NSAttributedString(string: speedStr, attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ])
             menu.addItem(speedItem)
-
-            let totalStr = "  ↓ \(VPNMonitor.formatBytes(vpn.bytesIn))  ↑ \(VPNMonitor.formatBytes(vpn.bytesOut))"
-            let totalItem = NSMenuItem(title: totalStr, action: nil, keyEquivalent: "")
+            let totalItem = NSMenuItem()
             totalItem.isEnabled = false
-            totalItem.attributedTitle = NSAttributedString(string: totalStr, attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
-                .foregroundColor: NSColor.tertiaryLabelColor,
-            ])
             menu.addItem(totalItem)
+
+            let applyVPNRows: () -> Void = { [weak self, weak speedItem, weak totalItem] in
+                guard let self = self, let s = speedItem, let t = totalItem else { return }
+                let v = self.vpnMonitor.status
+                let sp = "  ↓ \(VPNMonitor.formatSpeed(self.vpnMonitor.speedIn))  ↑ \(VPNMonitor.formatSpeed(self.vpnMonitor.speedOut))"
+                s.attributedTitle = NSAttributedString(string: sp, attributes: [
+                    .font: speedFont, .foregroundColor: NSColor.secondaryLabelColor,
+                ])
+                let tt = "  ↓ \(VPNMonitor.formatBytes(v.bytesIn))  ↑ \(VPNMonitor.formatBytes(v.bytesOut))"
+                t.attributedTitle = NSAttributedString(string: tt, attributes: [
+                    .font: speedFont, .foregroundColor: NSColor.tertiaryLabelColor,
+                ])
+            }
+            applyVPNRows()
+            liveRefreshers.append(applyVPNRows)
 
             let disconnectLabel = L10n.vpnDisconnectAction
             let disconnectItem = NSMenuItem(title: disconnectLabel, action: #selector(toggleVPN), keyEquivalent: "")
@@ -196,40 +275,30 @@ class StatusBarController: NSObject, NSMenuDelegate {
         // --- Traffic by Process ---
         menu.addItem(NSMenuItem.separator())
 
-        // Header with reset button
-        let trafficTitle: String
-        if let resetTime = trafficMonitor.resetTime {
-            let elapsed = Int(Date().timeIntervalSince(resetTime))
-            trafficTitle = "\(L10n.trafficByProcess)  (\(L10n.sinceDuration(elapsed)))"
-        } else {
-            trafficTitle = L10n.trafficByProcess
+        let trafficHeader = addHeader("", font: headerFont)
+        let applyTrafficHeader: () -> Void = { [weak self, weak trafficHeader] in
+            guard let self = self, let h = trafficHeader else { return }
+            let title: String
+            if let resetTime = self.trafficMonitor.resetTime {
+                let elapsed = Int(Date().timeIntervalSince(resetTime))
+                title = "\(L10n.trafficByProcess)  (\(L10n.sinceDuration(elapsed)))"
+            } else {
+                title = L10n.trafficByProcess
+            }
+            h.attributedTitle = NSAttributedString(string: title, attributes: [.font: headerFont])
         }
-        addHeader(trafficTitle, font: headerFont)
+        applyTrafficHeader()
+        liveRefreshers.append(applyTrafficHeader)
 
-        if trafficMonitor.topTraffic.isEmpty {
-            addDisabledItem("  \(L10n.noTraffic)", font: NSFont.systemFont(ofSize: 11))
-        }
-
-        for proc in trafficMonitor.topTraffic {
-            let inStr = TrafficMonitor.formatBytes(proc.bytesIn)
-            let outStr = TrafficMonitor.formatBytes(proc.bytesOut)
-            let title = "  \(proc.name)"
-            let detail = "    ↓\(inStr)  ↑\(outStr)"
-
-            let item = NSMenuItem(title: title, action: #selector(noop), keyEquivalent: "")
-            item.target = self
-
-            let full = NSMutableAttributedString()
-            full.append(NSAttributedString(string: title + "\n", attributes: [
-                .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            ]))
-            full.append(NSAttributedString(string: detail, attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]))
-            item.attributedTitle = full
-            menu.addItem(item)
-        }
+        let rankItem = NSMenuItem()
+        let rankView = TrafficRankView(
+            liveTop: trafficMonitor.topByLive,
+            cumulativeTop: trafficMonitor.topByCumulative
+        )
+        rankItem.view = rankView
+        rankItem.isEnabled = false
+        menu.addItem(rankItem)
+        self.trafficRankView = rankView
 
         let resetItem = NSMenuItem(title: "  \(L10n.resetTraffic)", action: #selector(resetTraffic), keyEquivalent: "r")
         resetItem.target = self
@@ -243,80 +312,110 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
 
         // --- Memory ---
-        let mem = memMonitor.info
-        let memUsed = MemoryMonitor.formatBytes(mem.used)
-        let memTotal = MemoryMonitor.formatBytes(mem.total)
-        let memPct = String(format: "%.0f%%", mem.usagePercent)
-        addHeader("\(L10n.memory): \(memUsed) / \(memTotal) (\(memPct))", font: headerFont)
+        let memHeader = addHeader("", font: headerFont)
+        let memBarItem = addDisabledItem("", font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular))
+        let memDetailFont = NSFont.systemFont(ofSize: 10)
+        let memDetailItem = NSMenuItem()
+        memDetailItem.isEnabled = false
+        menu.addItem(memDetailItem)
 
-        let memBarWidth = 30
-        let memFilled = Int(mem.usagePercent / 100.0 * Double(memBarWidth))
-        let memBar = String(repeating: "▓", count: min(memFilled, memBarWidth)) + String(repeating: "░", count: max(memBarWidth - memFilled, 0))
-        addDisabledItem("  \(memBar)", font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular))
-
-        let detailFont = NSFont.systemFont(ofSize: 10)
-        let detailColor = NSColor.secondaryLabelColor
-        let appMem = MemoryMonitor.formatBytes(mem.appMemory)
-        let wiredMem = MemoryMonitor.formatBytes(mem.wired)
-        let compMem = MemoryMonitor.formatBytes(mem.compressed)
-        let detailStr = "  \(L10n.app): \(appMem)  \(L10n.wired): \(wiredMem)  \(L10n.compressed): \(compMem)"
-        let detailItem = NSMenuItem(title: detailStr, action: nil, keyEquivalent: "")
-        detailItem.isEnabled = false
-        detailItem.attributedTitle = NSAttributedString(string: detailStr, attributes: [
-            .font: detailFont, .foregroundColor: detailColor,
-        ])
-        menu.addItem(detailItem)
-
-        // Top memory processes
-        for proc in memMonitor.topProcesses {
-            let memStr = MemoryMonitor.formatBytes(proc.mem)
-            let title = "  \(memStr.padding(toLength: 10, withPad: " ", startingAt: 0)) \(proc.name)"
-
-            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-            item.attributedTitle = NSAttributedString(string: title, attributes: [.font: bodyFont])
-
+        var memProcItems: [NSMenuItem] = []
+        for _ in memMonitor.topProcesses {
+            let item = NSMenuItem()
             let sub = NSMenu()
-            let killItem = NSMenuItem(title: "\(L10n.kill) \(proc.name) (PID \(proc.pid))", action: #selector(killProcess(_:)), keyEquivalent: "")
+            let killItem = NSMenuItem(title: "", action: #selector(killProcess(_:)), keyEquivalent: "")
             killItem.target = self
-            killItem.tag = proc.pid
             sub.addItem(killItem)
             item.submenu = sub
-
             menu.addItem(item)
+            memProcItems.append(item)
         }
+
+        let applyMem: () -> Void = { [weak self, weak memHeader, weak memBarItem, weak memDetailItem] in
+            guard let self = self else { return }
+            let mem = self.memMonitor.info
+            let memUsed = MemoryMonitor.formatBytes(mem.used)
+            let memTotal = MemoryMonitor.formatBytes(mem.total)
+            let memPct = String(format: "%.0f%%", mem.usagePercent)
+            memHeader?.attributedTitle = NSAttributedString(
+                string: "\(L10n.memory): \(memUsed) / \(memTotal) (\(memPct))",
+                attributes: [.font: headerFont])
+
+            let memBarWidth = 30
+            let memFilled = Int(mem.usagePercent / 100.0 * Double(memBarWidth))
+            let memBar = String(repeating: "▓", count: min(memFilled, memBarWidth)) + String(repeating: "░", count: max(memBarWidth - memFilled, 0))
+            memBarItem?.attributedTitle = NSAttributedString(
+                string: "  \(memBar)",
+                attributes: [.font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)])
+
+            let appMem = MemoryMonitor.formatBytes(mem.appMemory)
+            let wiredMem = MemoryMonitor.formatBytes(mem.wired)
+            let compMem = MemoryMonitor.formatBytes(mem.compressed)
+            let detailStr = "  \(L10n.app): \(appMem)  \(L10n.wired): \(wiredMem)  \(L10n.compressed): \(compMem)"
+            memDetailItem?.attributedTitle = NSAttributedString(string: detailStr, attributes: [
+                .font: memDetailFont, .foregroundColor: NSColor.secondaryLabelColor,
+            ])
+
+            let procs = self.memMonitor.topProcesses
+            for (i, proc) in procs.enumerated() where i < memProcItems.count {
+                let memStr = MemoryMonitor.formatBytes(proc.mem)
+                let title = "  \(memStr.padding(toLength: 10, withPad: " ", startingAt: 0)) \(proc.name)"
+                memProcItems[i].attributedTitle = NSAttributedString(string: title, attributes: [.font: bodyFont])
+                if let killItem = memProcItems[i].submenu?.items.first {
+                    killItem.title = "\(L10n.kill) \(proc.name) (PID \(proc.pid))"
+                    killItem.tag = proc.pid
+                }
+            }
+        }
+        applyMem()
+        liveRefreshers.append(applyMem)
 
         menu.addItem(NSMenuItem.separator())
 
         // --- CPU ---
-        let cpuStr = String(format: "%.1f%%", cpuMonitor.cpuUsage)
-        addHeader("\(L10n.cpu): \(cpuStr)", font: headerFont)
+        let cpuHeader = addHeader("", font: headerFont)
+        let cpuBarItem = addDisabledItem("", font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular))
 
-        let barWidth = 30
-        let filled = Int(cpuMonitor.cpuUsage / 100.0 * Double(barWidth))
-        let bar = String(repeating: "▓", count: min(filled, barWidth)) + String(repeating: "░", count: max(barWidth - filled, 0))
-        addDisabledItem("  \(bar)", font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular))
-
-        for proc in cpuMonitor.topProcesses {
-            let cpuFmt = String(format: "%5.1f%%", proc.cpu)
-            let title = "  \(cpuFmt)  \(proc.name)"
-
-            let isAbnormal = cpuMonitor.sustainedPids.contains(proc.pid)
-            let attrs: [NSAttributedString.Key: Any] = isAbnormal
-                ? [.font: bodyFont, .foregroundColor: NSColor.systemRed]
-                : [.font: bodyFont]
-
-            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-            item.attributedTitle = NSAttributedString(string: title, attributes: attrs)
-
+        var cpuProcItems: [NSMenuItem] = []
+        for _ in cpuMonitor.topProcesses {
+            let item = NSMenuItem()
             let sub = NSMenu()
-            let killItem = NSMenuItem(title: "\(L10n.kill) \(proc.name) (PID \(proc.pid))", action: #selector(killProcess(_:)), keyEquivalent: "")
+            let killItem = NSMenuItem(title: "", action: #selector(killProcess(_:)), keyEquivalent: "")
             killItem.target = self
-            killItem.tag = proc.pid
             sub.addItem(killItem)
             item.submenu = sub
-
             menu.addItem(item)
+            cpuProcItems.append(item)
         }
+
+        let applyCPU: () -> Void = { [weak self, weak cpuHeader, weak cpuBarItem] in
+            guard let self = self else { return }
+            let cpuStr = String(format: "%.1f%%", self.cpuMonitor.cpuUsage)
+            cpuHeader?.attributedTitle = NSAttributedString(string: "\(L10n.cpu): \(cpuStr)", attributes: [.font: headerFont])
+            let barWidth = 30
+            let filled = Int(self.cpuMonitor.cpuUsage / 100.0 * Double(barWidth))
+            let bar = String(repeating: "▓", count: min(filled, barWidth)) + String(repeating: "░", count: max(barWidth - filled, 0))
+            cpuBarItem?.attributedTitle = NSAttributedString(
+                string: "  \(bar)",
+                attributes: [.font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)])
+
+            let procs = self.cpuMonitor.topProcesses
+            for (i, proc) in procs.enumerated() where i < cpuProcItems.count {
+                let cpuFmt = String(format: "%5.1f%%", proc.cpu)
+                let title = "  \(cpuFmt)  \(proc.name)"
+                let isAbnormal = self.cpuMonitor.sustainedPids.contains(proc.pid)
+                let attrs: [NSAttributedString.Key: Any] = isAbnormal
+                    ? [.font: bodyFont, .foregroundColor: NSColor.systemRed]
+                    : [.font: bodyFont]
+                cpuProcItems[i].attributedTitle = NSAttributedString(string: title, attributes: attrs)
+                if let killItem = cpuProcItems[i].submenu?.items.first {
+                    killItem.title = "\(L10n.kill) \(proc.name) (PID \(proc.pid))"
+                    killItem.tag = proc.pid
+                }
+            }
+        }
+        applyCPU()
+        liveRefreshers.append(applyCPU)
 
         // --- Abnormal processes (CPUGuard) ---
         if !cpuMonitor.abnormalProcesses.isEmpty {
@@ -358,40 +457,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
             }
         }
 
-        // --- Watched processes ---
-        menu.addItem(NSMenuItem.separator())
-        for name in cpuMonitor.watchedProcesses {
-            let procs = cpuMonitor.readTopProcesses(count: 500)
-            let proc = procs.first { $0.name == name }
-            let alive = proc != nil
-            let status = alive ? "✓ \(name) \(L10n.running)" : "✗ \(name) \(L10n.notRunning)"
-            let color: NSColor = alive ? .systemGreen : .systemRed
-
-            if alive, let proc = proc {
-                let item = NSMenuItem(title: "  \(status)", action: nil, keyEquivalent: "")
-                item.attributedTitle = NSAttributedString(string: "  \(status)", attributes: [
-                    .font: NSFont.systemFont(ofSize: 11),
-                    .foregroundColor: color,
-                ])
-                let sub = NSMenu()
-                let restartLabel = L10n.isChinese ? "重启 \(name)" : "Restart \(name)"
-                let killItem = NSMenuItem(title: restartLabel, action: #selector(killProcess(_:)), keyEquivalent: "")
-                killItem.target = self
-                killItem.tag = proc.pid
-                sub.addItem(killItem)
-                item.submenu = sub
-                menu.addItem(item)
-            } else {
-                let item = NSMenuItem(title: "  \(status)", action: nil, keyEquivalent: "")
-                item.isEnabled = false
-                item.attributedTitle = NSAttributedString(string: "  \(status)", attributes: [
-                    .font: NSFont.systemFont(ofSize: 11),
-                    .foregroundColor: color,
-                ])
-                menu.addItem(item)
-            }
-        }
-
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(title: L10n.quit, action: #selector(quit), keyEquivalent: "q")
@@ -399,18 +464,22 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(quitItem)
     }
 
-    private func addHeader(_ title: String, font: NSFont) {
+    @discardableResult
+    private func addHeader(_ title: String, font: NSFont) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
         item.attributedTitle = NSAttributedString(string: title, attributes: [.font: font])
         menu.addItem(item)
+        return item
     }
 
-    private func addDisabledItem(_ title: String, font: NSFont) {
+    @discardableResult
+    private func addDisabledItem(_ title: String, font: NSFont) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
         item.attributedTitle = NSAttributedString(string: title, attributes: [.font: font])
         menu.addItem(item)
+        return item
     }
 
     @objc func noop() {}

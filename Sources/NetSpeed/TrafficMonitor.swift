@@ -4,31 +4,49 @@ struct ProcessTraffic {
     let name: String
     let bytesIn: UInt64
     let bytesOut: UInt64
+    let speedIn: Double   // bytes/sec
+    let speedOut: Double  // bytes/sec
     var total: UInt64 { bytesIn + bytesOut }
+    var speedTotal: Double { speedIn + speedOut }
 }
 
 class TrafficMonitor {
-    private(set) var topTraffic: [ProcessTraffic] = []
+    private(set) var topByCumulative: [ProcessTraffic] = []
+    private(set) var topByLive: [ProcessTraffic] = []
     private var baseline: [String: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
+    private var prevRaw: [String: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
+    private var prevUpdate: Date? = nil
     private(set) var resetTime: Date? = nil
 
     func update() {
         let raw = readRaw()
+        let now = Date()
+        let dt = prevUpdate.map { now.timeIntervalSince($0) } ?? 0
 
-        // Apply baseline
-        var adjusted: [String: ProcessTraffic] = [:]
+        var adjusted: [ProcessTraffic] = []
         for (name, traffic) in raw {
             let base = baseline[name] ?? (0, 0)
             let adjIn = traffic.bytesIn > base.bytesIn ? traffic.bytesIn - base.bytesIn : 0
             let adjOut = traffic.bytesOut > base.bytesOut ? traffic.bytesOut - base.bytesOut : 0
-            if adjIn == 0 && adjOut == 0 { continue }
-            adjusted[name] = ProcessTraffic(name: name, bytesIn: adjIn, bytesOut: adjOut)
+
+            var speedIn = 0.0
+            var speedOut = 0.0
+            if dt > 0, let prev = prevRaw[name] {
+                let dIn = traffic.bytesIn > prev.bytesIn ? traffic.bytesIn - prev.bytesIn : 0
+                let dOut = traffic.bytesOut > prev.bytesOut ? traffic.bytesOut - prev.bytesOut : 0
+                speedIn = Double(dIn) / dt
+                speedOut = Double(dOut) / dt
+            }
+
+            if adjIn == 0 && adjOut == 0 && speedIn == 0 && speedOut == 0 { continue }
+            adjusted.append(ProcessTraffic(name: name, bytesIn: adjIn, bytesOut: adjOut, speedIn: speedIn, speedOut: speedOut))
         }
 
-        topTraffic = adjusted.values
-            .sorted { $0.total > $1.total }
-            .prefix(5)
-            .map { $0 }
+        topByCumulative = Array(adjusted.sorted { $0.total > $1.total }.prefix(5))
+        topByLive = Array(adjusted.sorted { $0.speedTotal > $1.speedTotal }.prefix(5))
+
+        prevRaw = raw
+        prevUpdate = now
     }
 
     func reset() {
@@ -38,10 +56,11 @@ class TrafficMonitor {
             baseline[name] = (traffic.bytesIn, traffic.bytesOut)
         }
         resetTime = Date()
-        topTraffic = []
+        topByCumulative = []
+        topByLive = []
     }
 
-    private func readRaw() -> [String: ProcessTraffic] {
+    private func readRaw() -> [String: (bytesIn: UInt64, bytesOut: UInt64)] {
         let pipe = Pipe()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
@@ -56,7 +75,7 @@ class TrafficMonitor {
 
         guard let output = String(data: data, encoding: .utf8) else { return [:] }
 
-        var results: [String: ProcessTraffic] = [:]
+        var results: [String: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
 
         for line in output.components(separatedBy: "\n").dropFirst() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -80,16 +99,24 @@ class TrafficMonitor {
             }
 
             if let existing = results[name] {
-                results[name] = ProcessTraffic(
-                    name: name,
-                    bytesIn: existing.bytesIn + bytesIn,
-                    bytesOut: existing.bytesOut + bytesOut
-                )
+                results[name] = (bytesIn: existing.bytesIn + bytesIn, bytesOut: existing.bytesOut + bytesOut)
             } else {
-                results[name] = ProcessTraffic(name: name, bytesIn: bytesIn, bytesOut: bytesOut)
+                results[name] = (bytesIn: bytesIn, bytesOut: bytesOut)
             }
         }
         return results
+    }
+
+    static func formatSpeed(_ bytesPerSec: Double) -> String {
+        if bytesPerSec < 1 {
+            return "0 B/s"
+        } else if bytesPerSec < 1024 {
+            return String(format: "%.0f B/s", bytesPerSec)
+        } else if bytesPerSec < 1024 * 1024 {
+            return String(format: "%.1f KB/s", bytesPerSec / 1024)
+        } else {
+            return String(format: "%.1f MB/s", bytesPerSec / 1024 / 1024)
+        }
     }
 
     static func formatBytes(_ bytes: UInt64) -> String {

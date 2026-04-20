@@ -1,13 +1,21 @@
 import AppKit
 
 final class ChartView: NSView {
-    private let downData: [Double]
-    private let upData: [Double]
+    private var downData: [Double]
+    private var upData: [Double]
     private let maxHistory: Int
-    private let downLabel: String
-    private let upLabel: String
+    private var downLabel: String
+    private var upLabel: String
     private let title: String
     private let formatMax: (Double) -> String
+
+    func update(downData: [Double], upData: [Double], downLabel: String, upLabel: String) {
+        self.downData = downData
+        self.upData = upData
+        self.downLabel = downLabel
+        self.upLabel = upLabel
+        self.needsDisplay = true
+    }
 
     init(downData: [Double], upData: [Double], maxHistory: Int,
          downLabel: String, upLabel: String, title: String,

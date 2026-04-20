@@ -8,6 +8,8 @@ struct L10n {
 
     static let network = isChinese ? "网络" : "Network"
     static let trafficByProcess = isChinese ? "流量排行" : "Traffic by Process"
+    static let trafficLive = isChinese ? "实时" : "Live"
+    static let trafficCumulative = isChinese ? "累计" : "Total"
     static let resetTraffic = isChinese ? "重置流量" : "Reset Traffic"
     static let noTraffic = isChinese ? "暂无流量记录" : "No traffic recorded"
     static let sinceAgo = isChinese ? "前重置" : " ago"
