@@ -1,6 +1,6 @@
 import Foundation
 
-final class LatencyMonitor {
+final class LatencyMonitor: NSObject, URLSessionTaskDelegate {
     struct Target {
         let url: URL
     }
@@ -15,19 +15,26 @@ final class LatencyMonitor {
     var onUpdate: (() -> Void)?
 
     private var timer: Timer?
-    private let session: URLSession
 
-    init(name: String, targets: [String], maxHistory: Int = 60) {
-        self.name = name
-        self.targets = targets.compactMap { URL(string: $0).map(Target.init) }
-        self.maxHistory = maxHistory
-
+    private lazy var session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 3.0
         config.timeoutIntervalForResource = 3.0
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         config.waitsForConnectivity = false
-        self.session = URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }()
+
+    // Metrics delivered via delegate before the task's completion handler;
+    // consumed there to compute a clean HTTP round-trip.
+    private var pendingMetrics: [Int: URLSessionTaskMetrics] = [:]
+    private let metricsLock = NSLock()
+
+    init(name: String, targets: [String], maxHistory: Int = 60) {
+        self.name = name
+        self.targets = targets.compactMap { URL(string: $0).map(Target.init) }
+        self.maxHistory = maxHistory
+        super.init()
     }
 
     deinit {
@@ -83,22 +90,49 @@ final class LatencyMonitor {
         onUpdate?()
     }
 
-    /// HTTP HEAD via shared URLSession. 连接复用：首次请求包含 TCP + TLS 握手，
-    /// 之后 keepalive 的 HTTP HEAD 仅约 100 字节，测的是应用层 RTT。
-    /// 相比裸 TLS 握手，流量降 ~100×；URLSession 自带浏览器指纹，不易被 DPI/WAF 识别。
+    // URLSessionTaskDelegate: fires before the task's completion handler.
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        metricsLock.lock()
+        pendingMetrics[task.taskIdentifier] = metrics
+        metricsLock.unlock()
+    }
+
+    /// HTTP HEAD via shared URLSession. Uses URLSessionTaskMetrics to extract
+    /// pure HTTP round-trip (responseEndDate − requestStartDate), which excludes
+    /// TCP/TLS handshake. This gives stable readings regardless of whether the
+    /// underlying connection is reused, and avoids measuring Clash TUN's local
+    /// short-circuited handshake.
     private func probe(_ target: Target, completion: @escaping (Double?) -> Void) {
         var request = URLRequest(url: target.url)
         request.httpMethod = "HEAD"
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        let start = Date()
-        let task = session.dataTask(with: request) { _, response, error in
+
+        var capturedTask: URLSessionDataTask?
+        capturedTask = session.dataTask(with: request) { [weak self] _, response, error in
+            guard let self = self, let task = capturedTask else {
+                completion(nil)
+                return
+            }
+
+            self.metricsLock.lock()
+            let metrics = self.pendingMetrics.removeValue(forKey: task.taskIdentifier)
+            self.metricsLock.unlock()
+
             if error != nil || response == nil {
                 completion(nil)
                 return
             }
-            let ms = Date().timeIntervalSince(start) * 1000.0
+
+            guard let tx = metrics?.transactionMetrics.last,
+                  let reqStart = tx.requestStartDate,
+                  let resEnd = tx.responseEndDate else {
+                completion(nil)
+                return
+            }
+
+            let ms = resEnd.timeIntervalSince(reqStart) * 1000.0
             completion(ms)
         }
-        task.resume()
+        capturedTask?.resume()
     }
 }
