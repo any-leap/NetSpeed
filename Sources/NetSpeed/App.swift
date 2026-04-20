@@ -8,6 +8,10 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var trafficMonitor: TrafficMonitor
     private var memMonitor: MemoryMonitor
     private var vpnMonitor: VPNMonitor
+    private var latencyMonitorCN: LatencyMonitor
+    private var latencyMonitorIntl: LatencyMonitor
+    private weak var latencyChartCN: LatencyChartView?
+    private weak var latencyChartIntl: LatencyChartView?
     private var menu: NSMenu
     private var guardTimer: Timer?
     private var menuIsOpen = false
@@ -23,9 +27,28 @@ class StatusBarController: NSObject, NSMenuDelegate {
         trafficMonitor = TrafficMonitor()
         memMonitor = MemoryMonitor()
         vpnMonitor = VPNMonitor()
+        latencyMonitorCN = LatencyMonitor(name: "mainland", targets: [
+            ("www.baidu.com", 443),
+            ("www.taobao.com", 443),
+            ("www.qq.com", 443),
+        ])
+        latencyMonitorIntl = LatencyMonitor(name: "overseas", targets: [
+            ("www.google.com", 443),
+            ("www.cloudflare.com", 443),
+            ("www.github.com", 443),
+        ])
         menu = NSMenu()
 
         super.init()
+
+        let latencyRefresh: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            if self.menuIsOpen { self.refreshLiveViews() }
+        }
+        latencyMonitorCN.onUpdate = latencyRefresh
+        latencyMonitorIntl.onUpdate = latencyRefresh
+        latencyMonitorCN.start()
+        latencyMonitorIntl.start()
 
         menu.delegate = self
         statusItem.menu = menu
@@ -126,6 +149,14 @@ class StatusBarController: NSObject, NSMenuDelegate {
             liveTop: trafficMonitor.topByLive,
             cumulativeTop: trafficMonitor.topByCumulative
         )
+        latencyChartCN?.update(
+            history: latencyMonitorCN.history,
+            current: latencyMonitorCN.current
+        )
+        latencyChartIntl?.update(
+            history: latencyMonitorIntl.history,
+            current: latencyMonitorIntl.current
+        )
         for r in liveRefreshers { r() }
     }
 
@@ -138,7 +169,9 @@ class StatusBarController: NSObject, NSMenuDelegate {
         let watchedAlive = watchedAliveMask()
         // abnormalCount and alertCount intentionally excluded — those sections
         // refresh on next menu open; changing them mid-open would force a rebuild/flash.
-        return "\(vpn)\(vpnHasIP)|\(memCount)|\(cpuCount)|\(chartReady)|\(watchedAlive)"
+        let latencyCNReady = latencyMonitorCN.history.count >= 2 ? "1" : "0"
+        let latencyIntlReady = latencyMonitorIntl.history.count >= 2 ? "1" : "0"
+        return "\(vpn)\(vpnHasIP)|\(memCount)|\(cpuCount)|\(chartReady)|\(watchedAlive)|\(latencyCNReady)\(latencyIntlReady)"
     }
 
     private var cachedWatchedProcs: [TopProcess] = []
@@ -157,6 +190,37 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         let headerFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
         let bodyFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+
+        // --- Latency Charts (Mainland / Overseas) ---
+        if latencyMonitorCN.history.count >= 2 {
+            let item = NSMenuItem()
+            let view = LatencyChartView(
+                history: latencyMonitorCN.history,
+                maxHistory: latencyMonitorCN.maxHistory,
+                current: latencyMonitorCN.current,
+                title: L10n.latencyMainland,
+                lineColor: .systemCyan
+            )
+            item.view = view
+            item.isEnabled = false
+            self.latencyChartCN = view
+            menu.addItem(item)
+        }
+
+        if latencyMonitorIntl.history.count >= 2 {
+            let item = NSMenuItem()
+            let view = LatencyChartView(
+                history: latencyMonitorIntl.history,
+                maxHistory: latencyMonitorIntl.maxHistory,
+                current: latencyMonitorIntl.current,
+                title: L10n.latencyOverseas,
+                lineColor: .systemPurple
+            )
+            item.view = view
+            item.isEnabled = false
+            self.latencyChartIntl = view
+            menu.addItem(item)
+        }
 
         // --- Network Chart ---
         if netMonitor.downHistory.count >= 2 {
