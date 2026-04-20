@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Manual release version (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build release binary (ad-hoc signed)
+        run: make build
+
+      - name: Package .app bundle
+        run: |
+          chmod +x scripts/make-app.sh scripts/make-dmg.sh
+          scripts/make-app.sh "${{ steps.ver.outputs.tag }}"
+
+      - name: Create DMG
+        run: scripts/make-dmg.sh "${{ steps.ver.outputs.tag }}"
+
+      - name: Create tarball (for CLI users / Homebrew)
+        run: |
+          mkdir -p dist
+          tar -czf "dist/NetSpeed-${{ steps.ver.outputs.tag }}-macos-arm64.tar.gz" \
+            -C .build/release NetSpeed
+
+      - name: List artifacts
+        run: ls -la dist/
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/NetSpeed-*.dmg
+            dist/NetSpeed-*.tar.gz
