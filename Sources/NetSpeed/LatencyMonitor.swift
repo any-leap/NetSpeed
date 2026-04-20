@@ -43,4 +43,42 @@ final class LatencyMonitor {
         current = value
         onUpdate?()
     }
+
+    /// 对单个目标做 TCP 半握手计时。成功返回 RTT（ms），失败/超时返回 nil。
+    /// completion 一定在 probeQueue 上回调，且至多一次。
+    private func probe(_ target: Target, completion: @escaping (Double?) -> Void) {
+        guard let port = NWEndpoint.Port(rawValue: target.port) else {
+            completion(nil)
+            return
+        }
+        let host = NWEndpoint.Host(target.host)
+        let conn = NWConnection(host: host, port: port, using: .tcp)
+        let start = Date()
+        var fired = false
+
+        let fire: (Double?) -> Void = { value in
+            if fired { return }
+            fired = true
+            conn.cancel()
+            completion(value)
+        }
+
+        conn.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                let ms = Date().timeIntervalSince(start) * 1000.0
+                fire(ms)
+            case .failed, .cancelled:
+                fire(nil)
+            default:
+                break
+            }
+        }
+
+        conn.start(queue: probeQueue)
+
+        probeQueue.asyncAfter(deadline: .now() + 2.0) {
+            fire(nil)
+        }
+    }
 }
