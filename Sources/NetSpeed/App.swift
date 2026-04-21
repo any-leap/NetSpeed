@@ -25,6 +25,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var trafficRankSection: TrafficRankSection!
     private var memorySection: MemorySection!
     private var cpuSection: CPUSection!
+    private var abnormalSection: AbnormalProcessesSection!
+    private var alertsSection: RecentAlertsSection!
     private var liveRefreshers: [() -> Void] = []
     private var structureSignature: String = ""
 
@@ -79,6 +81,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
         trafficRankSection = TrafficRankSection(trafficMonitor: trafficMonitor, actions: actions)
         memorySection = MemorySection(memMonitor: memMonitor, actions: actions)
         cpuSection = CPUSection(cpuMonitor: cpuMonitor, actions: actions)
+        abnormalSection = AbnormalProcessesSection(cpuMonitor: cpuMonitor, actions: actions)
+        alertsSection = RecentAlertsSection(cpuMonitor: cpuMonitor)
 
         let latencyRefresh: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -240,41 +244,13 @@ class StatusBarController: NSObject, NSMenuDelegate {
         // --- Abnormal processes (CPUGuard) ---
         if !cpuMonitor.abnormalProcesses.isEmpty {
             menu.addItem(NSMenuItem.separator())
-            addHeader("⚠ \(L10n.abnormal) (\(Int(cpuMonitor.cpuThreshold))%+)", font: headerFont)
-
-            for proc in cpuMonitor.abnormalProcesses {
-                let cpuFmt = String(format: "%5.1f%%", proc.cpu)
-                let title = "  \(cpuFmt)  \(proc.name)"
-
-                let item = NSMenuItem(title: title, action: #selector(MenuActions.killProcess(_:)), keyEquivalent: "")
-                item.target = actions
-                item.tag = proc.pid
-
-                let redAttrs: [NSAttributedString.Key: Any] = [
-                    .font: bodyFont,
-                    .foregroundColor: NSColor.systemRed,
-                ]
-                item.attributedTitle = NSAttributedString(string: title, attributes: redAttrs)
-                menu.addItem(item)
-            }
+            _ = abnormalSection.addItems(to: menu)
         }
 
         // --- Recent Alerts ---
         if !cpuMonitor.recentAlerts.isEmpty {
             menu.addItem(NSMenuItem.separator())
-            addHeader(L10n.recentAlerts, font: headerFont)
-
-            for alert in cpuMonitor.recentAlerts.prefix(5) {
-                let title = "  [\(alert.time)] \(alert.message)"
-                let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-                item.isEnabled = false
-                let alertAttrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 10),
-                    .foregroundColor: NSColor.secondaryLabelColor,
-                ]
-                item.attributedTitle = NSAttributedString(string: title, attributes: alertAttrs)
-                menu.addItem(item)
-            }
+            _ = alertsSection.addItems(to: menu)
         }
 
         menu.addItem(NSMenuItem.separator())
