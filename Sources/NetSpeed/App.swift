@@ -22,7 +22,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var networkChartSection: NetworkChartSection!
     private var watchedSection: WatchedProcessesSection!
     private var vpnSection: VPNSection!
-    private weak var trafficRankView: TrafficRankView?
+    private var trafficRankSection: TrafficRankSection!
     private var liveRefreshers: [() -> Void] = []
     private var structureSignature: String = ""
 
@@ -74,6 +74,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         networkChartSection = NetworkChartSection(monitor: netMonitor)
         watchedSection = WatchedProcessesSection(cpuMonitor: cpuMonitor, actions: actions)
         vpnSection = VPNSection(monitor: vpnMonitor, actions: actions)
+        trafficRankSection = TrafficRankSection(trafficMonitor: trafficMonitor, actions: actions)
 
         let latencyRefresh: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -174,10 +175,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
             return
         }
         networkChartSection.refresh()
-        trafficRankView?.update(
-            liveTop: trafficMonitor.topByLive,
-            cumulativeTop: trafficMonitor.topByCumulative
-        )
+        trafficRankSection.refresh()
         latencyChartCNSection.refresh()
         latencyChartIntlSection.refresh()
         vpnSection.refresh()
@@ -221,40 +219,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         // --- Traffic by Process ---
         menu.addItem(NSMenuItem.separator())
-
-        let trafficHeader = addHeader("", font: headerFont)
-        let applyTrafficHeader: () -> Void = { [weak self, weak trafficHeader] in
-            guard let self = self, let h = trafficHeader else { return }
-            let title: String
-            if let resetTime = self.trafficMonitor.resetTime {
-                let elapsed = Int(Date().timeIntervalSince(resetTime))
-                title = "\(L10n.trafficByProcess)  (\(L10n.sinceDuration(elapsed)))"
-            } else {
-                title = L10n.trafficByProcess
-            }
-            h.attributedTitle = NSAttributedString(string: title, attributes: [.font: headerFont])
-        }
-        applyTrafficHeader()
-        liveRefreshers.append(applyTrafficHeader)
-
-        let rankItem = NSMenuItem()
-        let rankView = TrafficRankView(
-            liveTop: trafficMonitor.topByLive,
-            cumulativeTop: trafficMonitor.topByCumulative
-        )
-        rankItem.view = rankView
-        rankItem.isEnabled = false
-        menu.addItem(rankItem)
-        self.trafficRankView = rankView
-
-        let resetItem = NSMenuItem(title: "  \(L10n.resetTraffic)", action: #selector(MenuActions.resetTraffic), keyEquivalent: "r")
-        resetItem.target = actions
-        let resetAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.systemBlue,
-        ]
-        resetItem.attributedTitle = NSAttributedString(string: "  \(L10n.resetTraffic)", attributes: resetAttrs)
-        menu.addItem(resetItem)
+        _ = trafficRankSection.addItems(to: menu)
 
         menu.addItem(NSMenuItem.separator())
 
