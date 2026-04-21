@@ -12,6 +12,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var latencyMonitorIntl: LatencyMonitor
     private let notifier = NotificationHelper()
     private var vpnController: VPNController!
+    private var actions: MenuActions!
     private weak var latencyChartCN: LatencyChartView?
     private weak var latencyChartIntl: LatencyChartView?
     private var menu: NSMenu
@@ -47,6 +48,13 @@ class StatusBarController: NSObject, NSMenuDelegate {
         vpnController.onToggleCompleted = { [weak self] in
             self?.rebuildMenu()
         }
+
+        actions = MenuActions(
+            cpuMonitor: cpuMonitor,
+            trafficMonitor: trafficMonitor,
+            vpnController: vpnController
+        )
+        actions.onNeedsRebuild = { [weak self] in self?.rebuildMenu() }
 
         let latencyRefresh: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -263,8 +271,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
             if let proc = proc {
                 let sub = NSMenu()
                 let restartLabel = L10n.isChinese ? "重启 \(name)" : "Restart \(name)"
-                let killItem = NSMenuItem(title: restartLabel, action: #selector(killProcess(_:)), keyEquivalent: "")
-                killItem.target = self
+                let killItem = NSMenuItem(title: restartLabel, action: #selector(MenuActions.killProcess(_:)), keyEquivalent: "")
+                killItem.target = actions
                 killItem.tag = proc.pid
                 sub.addItem(killItem)
                 item.submenu = sub
@@ -316,8 +324,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
             liveRefreshers.append(applyVPNRows)
 
             let disconnectLabel = L10n.vpnDisconnectAction
-            let disconnectItem = NSMenuItem(title: disconnectLabel, action: #selector(toggleVPN), keyEquivalent: "")
-            disconnectItem.target = self
+            let disconnectItem = NSMenuItem(title: disconnectLabel, action: #selector(MenuActions.toggleVPN), keyEquivalent: "")
+            disconnectItem.target = actions
             disconnectItem.attributedTitle = NSAttributedString(string: "  \(disconnectLabel)", attributes: [
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: NSColor.systemRed,
@@ -334,8 +342,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
             menu.addItem(item)
 
             let connectLabel = L10n.vpnConnectAction
-            let connectItem = NSMenuItem(title: connectLabel, action: #selector(toggleVPN), keyEquivalent: "")
-            connectItem.target = self
+            let connectItem = NSMenuItem(title: connectLabel, action: #selector(MenuActions.toggleVPN), keyEquivalent: "")
+            connectItem.target = actions
             connectItem.attributedTitle = NSAttributedString(string: "  \(connectLabel)", attributes: [
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: NSColor.systemGreen,
@@ -371,8 +379,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(rankItem)
         self.trafficRankView = rankView
 
-        let resetItem = NSMenuItem(title: "  \(L10n.resetTraffic)", action: #selector(resetTraffic), keyEquivalent: "r")
-        resetItem.target = self
+        let resetItem = NSMenuItem(title: "  \(L10n.resetTraffic)", action: #selector(MenuActions.resetTraffic), keyEquivalent: "r")
+        resetItem.target = actions
         let resetAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: NSColor.systemBlue,
@@ -394,8 +402,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
         for _ in memMonitor.topProcesses {
             let item = NSMenuItem()
             let sub = NSMenu()
-            let killItem = NSMenuItem(title: "", action: #selector(killProcess(_:)), keyEquivalent: "")
-            killItem.target = self
+            let killItem = NSMenuItem(title: "", action: #selector(MenuActions.killProcess(_:)), keyEquivalent: "")
+            killItem.target = actions
             sub.addItem(killItem)
             item.submenu = sub
             menu.addItem(item)
@@ -451,8 +459,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
         for _ in cpuMonitor.topProcesses {
             let item = NSMenuItem()
             let sub = NSMenu()
-            let killItem = NSMenuItem(title: "", action: #selector(killProcess(_:)), keyEquivalent: "")
-            killItem.target = self
+            let killItem = NSMenuItem(title: "", action: #selector(MenuActions.killProcess(_:)), keyEquivalent: "")
+            killItem.target = actions
             sub.addItem(killItem)
             item.submenu = sub
             menu.addItem(item)
@@ -497,8 +505,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
                 let cpuFmt = String(format: "%5.1f%%", proc.cpu)
                 let title = "  \(cpuFmt)  \(proc.name)"
 
-                let item = NSMenuItem(title: title, action: #selector(killProcess(_:)), keyEquivalent: "")
-                item.target = self
+                let item = NSMenuItem(title: title, action: #selector(MenuActions.killProcess(_:)), keyEquivalent: "")
+                item.target = actions
                 item.tag = proc.pid
 
                 let redAttrs: [NSAttributedString.Key: Any] = [
@@ -530,8 +538,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(title: L10n.quit, action: #selector(quit), keyEquivalent: "q")
-        quitItem.target = self
+        let quitItem = NSMenuItem(title: L10n.quit, action: #selector(MenuActions.quit), keyEquivalent: "q")
+        quitItem.target = actions
         menu.addItem(quitItem)
     }
 
@@ -551,37 +559,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         item.attributedTitle = NSAttributedString(string: title, attributes: [.font: font])
         menu.addItem(item)
         return item
-    }
-
-    @objc func noop() {}
-
-    @objc func resetTraffic() {
-        trafficMonitor.reset()
-        rebuildMenu()
-    }
-
-    // MARK: - Chart (see ChartView class)
-
-    @objc func killProcess(_ sender: NSMenuItem) {
-        let pid = sender.tag
-        let result = kill(Int32(pid), SIGTERM)
-        if result != 0 {
-            let script = "do shell script \"kill \(pid)\" with administrator privileges"
-            var error: NSDictionary?
-            if let appleScript = NSAppleScript(source: script) {
-                appleScript.executeAndReturnError(&error)
-            }
-        }
-        cpuMonitor.update()
-        rebuildMenu()
-    }
-
-    @objc func toggleVPN() {
-        vpnController.toggle()
-    }
-
-    @objc func quit() {
-        NSApplication.shared.terminate(nil)
     }
 
     deinit {
