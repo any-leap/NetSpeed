@@ -77,7 +77,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         )
         networkChartSection = NetworkChartSection(monitor: netMonitor)
         watchedSection = WatchedProcessesSection(cpuMonitor: cpuMonitor, actions: actions)
-        vpnSection = VPNSection(monitor: vpnMonitor, actions: actions)
+        vpnSection = VPNSection(monitor: vpnMonitor, vpnController: vpnController, actions: actions)
         trafficRankSection = TrafficRankSection(trafficMonitor: trafficMonitor, actions: actions)
         memorySection = MemorySection(memMonitor: memMonitor, actions: actions)
         cpuSection = CPUSection(cpuMonitor: cpuMonitor, actions: actions)
@@ -112,8 +112,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         vpnMonitor.onDisconnect = { [weak self] in
             self?.notifier.send(
-                title: "VPN Disconnected",
-                message: "OpenVPN connection has been lost"
+                title: L10n.tunnelDisconnectedTitle,
+                message: L10n.tunnelDisconnectedMessage
             )
         }
 
