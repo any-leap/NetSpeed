@@ -14,8 +14,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var vpnController: VPNController!
     private var actions: MenuActions!
     private var quitSection: QuitSection!
-    private weak var latencyChartCN: LatencyChartView?
-    private weak var latencyChartIntl: LatencyChartView?
+    private var latencyChartCNSection: LatencyChartSection!
+    private var latencyChartIntlSection: LatencyChartSection!
     private var menu: NSMenu
     private var guardTimer: Timer?
     private var menuIsOpen = false
@@ -58,6 +58,17 @@ class StatusBarController: NSObject, NSMenuDelegate {
         actions.onNeedsRebuild = { [weak self] in self?.rebuildMenu() }
 
         quitSection = QuitSection(actions: actions)
+
+        latencyChartCNSection = LatencyChartSection(
+            monitor: latencyMonitorCN,
+            title: L10n.latencyMainland,
+            lineColor: .systemCyan
+        )
+        latencyChartIntlSection = LatencyChartSection(
+            monitor: latencyMonitorIntl,
+            title: L10n.latencyOverseas,
+            lineColor: .systemPurple
+        )
 
         let latencyRefresh: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -167,14 +178,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
             liveTop: trafficMonitor.topByLive,
             cumulativeTop: trafficMonitor.topByCumulative
         )
-        latencyChartCN?.update(
-            history: latencyMonitorCN.history,
-            current: latencyMonitorCN.current
-        )
-        latencyChartIntl?.update(
-            history: latencyMonitorIntl.history,
-            current: latencyMonitorIntl.current
-        )
+        latencyChartCNSection.refresh()
+        latencyChartIntlSection.refresh()
         for r in liveRefreshers { r() }
     }
 
@@ -210,35 +215,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
         let bodyFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
 
         // --- Latency Charts (Mainland / Overseas) ---
-        if latencyMonitorCN.history.count >= 2 {
-            let item = NSMenuItem()
-            let view = LatencyChartView(
-                history: latencyMonitorCN.history,
-                maxHistory: latencyMonitorCN.maxHistory,
-                current: latencyMonitorCN.current,
-                title: L10n.latencyMainland,
-                lineColor: .systemCyan
-            )
-            item.view = view
-            item.isEnabled = false
-            self.latencyChartCN = view
-            menu.addItem(item)
-        }
-
-        if latencyMonitorIntl.history.count >= 2 {
-            let item = NSMenuItem()
-            let view = LatencyChartView(
-                history: latencyMonitorIntl.history,
-                maxHistory: latencyMonitorIntl.maxHistory,
-                current: latencyMonitorIntl.current,
-                title: L10n.latencyOverseas,
-                lineColor: .systemPurple
-            )
-            item.view = view
-            item.isEnabled = false
-            self.latencyChartIntl = view
-            menu.addItem(item)
-        }
+        _ = latencyChartCNSection.addItems(to: menu)
+        _ = latencyChartIntlSection.addItems(to: menu)
 
         // --- Network Chart ---
         if netMonitor.downHistory.count >= 2 {
