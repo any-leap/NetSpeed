@@ -21,6 +21,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var menuIsOpen = false
     private var networkChartSection: NetworkChartSection!
     private var watchedSection: WatchedProcessesSection!
+    private var vpnSection: VPNSection!
     private weak var trafficRankView: TrafficRankView?
     private var liveRefreshers: [() -> Void] = []
     private var structureSignature: String = ""
@@ -72,6 +73,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         )
         networkChartSection = NetworkChartSection(monitor: netMonitor)
         watchedSection = WatchedProcessesSection(cpuMonitor: cpuMonitor, actions: actions)
+        vpnSection = VPNSection(monitor: vpnMonitor, actions: actions)
 
         let latencyRefresh: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -178,12 +180,11 @@ class StatusBarController: NSObject, NSMenuDelegate {
         )
         latencyChartCNSection.refresh()
         latencyChartIntlSection.refresh()
+        vpnSection.refresh()
         for r in liveRefreshers { r() }
     }
 
     private func currentStructureSignature() -> String {
-        let vpn = vpnMonitor.status.connected ? "VC" : "VD"
-        let vpnHasIP = (vpnMonitor.status.localIP != nil && vpnMonitor.status.interfaceName != nil) ? "1" : "0"
         let memCount = memMonitor.topProcesses.count
         let cpuCount = cpuMonitor.topProcesses.count
         let chartReady = netMonitor.downHistory.count >= 2 ? "1" : "0"
@@ -192,7 +193,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         // refresh on next menu open; changing them mid-open would force a rebuild/flash.
         let latencyCNReady = latencyMonitorCN.history.count >= 2 ? "1" : "0"
         let latencyIntlReady = latencyMonitorIntl.history.count >= 2 ? "1" : "0"
-        return "\(vpn)\(vpnHasIP)|\(memCount)|\(cpuCount)|\(chartReady)|\(watchedAlive)|\(latencyCNReady)\(latencyIntlReady)"
+        return "\(vpnSection.structureSignature)|\(memCount)|\(cpuCount)|\(chartReady)|\(watchedAlive)|\(latencyCNReady)\(latencyIntlReady)"
     }
 
     private func rebuildMenu() {
@@ -216,72 +217,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         // --- VPN Status ---
         menu.addItem(NSMenuItem.separator())
-        let vpn = vpnMonitor.status
-        if vpn.connected {
-            let vpnHeader = "\(L10n.vpn): \(L10n.vpnConnected)"
-            addHeader(vpnHeader, font: headerFont)
-
-            if let ip = vpn.localIP, let iface = vpn.interfaceName {
-                let detailStr = "  \(iface)  \(ip)"
-                let item = NSMenuItem(title: detailStr, action: nil, keyEquivalent: "")
-                item.isEnabled = false
-                item.attributedTitle = NSAttributedString(string: detailStr, attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
-                    .foregroundColor: NSColor.systemGreen,
-                ])
-                menu.addItem(item)
-            }
-
-            let speedFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-            let speedItem = NSMenuItem()
-            speedItem.isEnabled = false
-            menu.addItem(speedItem)
-            let totalItem = NSMenuItem()
-            totalItem.isEnabled = false
-            menu.addItem(totalItem)
-
-            let applyVPNRows: () -> Void = { [weak self, weak speedItem, weak totalItem] in
-                guard let self = self, let s = speedItem, let t = totalItem else { return }
-                let v = self.vpnMonitor.status
-                let sp = "  ↓ \(VPNMonitor.formatSpeed(self.vpnMonitor.speedIn))  ↑ \(VPNMonitor.formatSpeed(self.vpnMonitor.speedOut))"
-                s.attributedTitle = NSAttributedString(string: sp, attributes: [
-                    .font: speedFont, .foregroundColor: NSColor.secondaryLabelColor,
-                ])
-                let tt = "  ↓ \(VPNMonitor.formatBytes(v.bytesIn))  ↑ \(VPNMonitor.formatBytes(v.bytesOut))"
-                t.attributedTitle = NSAttributedString(string: tt, attributes: [
-                    .font: speedFont, .foregroundColor: NSColor.tertiaryLabelColor,
-                ])
-            }
-            applyVPNRows()
-            liveRefreshers.append(applyVPNRows)
-
-            let disconnectLabel = L10n.vpnDisconnectAction
-            let disconnectItem = NSMenuItem(title: disconnectLabel, action: #selector(MenuActions.toggleVPN), keyEquivalent: "")
-            disconnectItem.target = actions
-            disconnectItem.attributedTitle = NSAttributedString(string: "  \(disconnectLabel)", attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: NSColor.systemRed,
-            ])
-            menu.addItem(disconnectItem)
-        } else {
-            let vpnHeader = "\(L10n.vpn): \(L10n.vpnDisconnected)"
-            let item = NSMenuItem(title: vpnHeader, action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            item.attributedTitle = NSAttributedString(string: vpnHeader, attributes: [
-                .font: headerFont,
-                .foregroundColor: NSColor.systemRed,
-            ])
-            menu.addItem(item)
-
-            let connectLabel = L10n.vpnConnectAction
-            let connectItem = NSMenuItem(title: connectLabel, action: #selector(MenuActions.toggleVPN), keyEquivalent: "")
-            connectItem.target = actions
-            connectItem.attributedTitle = NSAttributedString(string: "  \(connectLabel)", attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: NSColor.systemGreen,
-            ])
-            menu.addItem(connectItem)
-        }
+        _ = vpnSection.addItems(to: menu)
 
         // --- Traffic by Process ---
         menu.addItem(NSMenuItem.separator())
