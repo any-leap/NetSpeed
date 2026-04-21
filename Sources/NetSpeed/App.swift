@@ -11,6 +11,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var latencyMonitorCN: LatencyMonitor
     private var latencyMonitorIntl: LatencyMonitor
     private let notifier = NotificationHelper()
+    private var vpnController: VPNController!
     private weak var latencyChartCN: LatencyChartView?
     private weak var latencyChartIntl: LatencyChartView?
     private var menu: NSMenu
@@ -41,6 +42,11 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu = NSMenu()
 
         super.init()
+
+        vpnController = VPNController(monitor: vpnMonitor, notifier: notifier)
+        vpnController.onToggleCompleted = { [weak self] in
+            self?.rebuildMenu()
+        }
 
         let latencyRefresh: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -570,60 +576,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
         rebuildMenu()
     }
 
-    private static let vpnConfigKey = "vpnConfigPath"
-    private static let vpnAuthKey = "vpnAuthPath"
-
-    private var vpnConfigPath: String? {
-        UserDefaults.standard.string(forKey: Self.vpnConfigKey)
-    }
-
-    private var vpnAuthPath: String {
-        UserDefaults.standard.string(forKey: Self.vpnAuthKey)
-            ?? FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".openvpn-auth").path
-    }
-
-    private func promptForVPNConfig() -> String? {
-        let panel = NSOpenPanel()
-        panel.title = "Select OpenVPN config (.ovpn)"
-        panel.allowedContentTypes = []
-        panel.allowsOtherFileTypes = true
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return nil }
-        UserDefaults.standard.set(url.path, forKey: Self.vpnConfigKey)
-        return url.path
-    }
-
-    private func shellQuote(_ s: String) -> String {
-        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
     @objc func toggleVPN() {
-        if vpnMonitor.status.connected {
-            let script = "do shell script \"killall openvpn\" with administrator privileges"
-            var error: NSDictionary?
-            if let appleScript = NSAppleScript(source: script) {
-                appleScript.executeAndReturnError(&error)
-            }
-        } else {
-            guard let configPath = vpnConfigPath ?? promptForVPNConfig() else { return }
-            let cfg = shellQuote(configPath)
-            let auth = shellQuote(vpnAuthPath)
-            let cmd = "/opt/homebrew/sbin/openvpn --daemon --log /tmp/openvpn.log --config \(cfg) --auth-user-pass \(auth)"
-            let escaped = cmd.replacingOccurrences(of: "\\", with: "\\\\")
-                             .replacingOccurrences(of: "\"", with: "\\\"")
-            let script = "do shell script \"\(escaped)\" with administrator privileges"
-            var error: NSDictionary?
-            if let appleScript = NSAppleScript(source: script) {
-                appleScript.executeAndReturnError(&error)
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            self?.vpnMonitor.update()
-            self?.rebuildMenu()
-        }
+        vpnController.toggle()
     }
 
     @objc func quit() {
