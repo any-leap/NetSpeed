@@ -20,6 +20,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var guardTimer: Timer?
     private var menuIsOpen = false
     private var networkChartSection: NetworkChartSection!
+    private var watchedSection: WatchedProcessesSection!
     private weak var trafficRankView: TrafficRankView?
     private var liveRefreshers: [() -> Void] = []
     private var structureSignature: String = ""
@@ -70,6 +71,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
             lineColor: .systemPurple
         )
         networkChartSection = NetworkChartSection(monitor: netMonitor)
+        watchedSection = WatchedProcessesSection(cpuMonitor: cpuMonitor, actions: actions)
 
         let latencyRefresh: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -185,21 +187,12 @@ class StatusBarController: NSObject, NSMenuDelegate {
         let memCount = memMonitor.topProcesses.count
         let cpuCount = cpuMonitor.topProcesses.count
         let chartReady = netMonitor.downHistory.count >= 2 ? "1" : "0"
-        let watchedAlive = watchedAliveMask()
+        let watchedAlive = watchedSection.structureSignature
         // abnormalCount and alertCount intentionally excluded — those sections
         // refresh on next menu open; changing them mid-open would force a rebuild/flash.
         let latencyCNReady = latencyMonitorCN.history.count >= 2 ? "1" : "0"
         let latencyIntlReady = latencyMonitorIntl.history.count >= 2 ? "1" : "0"
         return "\(vpn)\(vpnHasIP)|\(memCount)|\(cpuCount)|\(chartReady)|\(watchedAlive)|\(latencyCNReady)\(latencyIntlReady)"
-    }
-
-    private var cachedWatchedProcs: [TopProcess] = []
-    private func watchedAliveMask() -> String {
-        let procs = cpuMonitor.readTopProcesses(count: 500)
-        cachedWatchedProcs = procs
-        return cpuMonitor.watchedProcesses.map { name in
-            procs.contains(where: { $0.name == name }) ? "1" : "0"
-        }.joined()
     }
 
     private func rebuildMenu() {
@@ -217,32 +210,9 @@ class StatusBarController: NSObject, NSMenuDelegate {
         // --- Network Chart ---
         _ = networkChartSection.addItems(to: menu)
 
-        // --- Watched processes (e.g. bird) ---
+        // --- Watched processes ---
         menu.addItem(NSMenuItem.separator())
-        let watchedProcs = cpuMonitor.readTopProcesses(count: 500)
-        for name in cpuMonitor.watchedProcesses {
-            let proc = watchedProcs.first { $0.name == name }
-            let alive = proc != nil
-            let status = alive ? "✓ \(name) \(L10n.running)" : "✗ \(name) \(L10n.notRunning)"
-            let color: NSColor = alive ? .systemGreen : .systemRed
-            let item = NSMenuItem(title: "  \(status)", action: nil, keyEquivalent: "")
-            item.attributedTitle = NSAttributedString(string: "  \(status)", attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: color,
-            ])
-            if let proc = proc {
-                let sub = NSMenu()
-                let restartLabel = L10n.isChinese ? "重启 \(name)" : "Restart \(name)"
-                let killItem = NSMenuItem(title: restartLabel, action: #selector(MenuActions.killProcess(_:)), keyEquivalent: "")
-                killItem.target = actions
-                killItem.tag = proc.pid
-                sub.addItem(killItem)
-                item.submenu = sub
-            } else {
-                item.isEnabled = false
-            }
-            menu.addItem(item)
-        }
+        _ = watchedSection.addItems(to: menu)
 
         // --- VPN Status ---
         menu.addItem(NSMenuItem.separator())
