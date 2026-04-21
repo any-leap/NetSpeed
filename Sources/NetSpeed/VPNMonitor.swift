@@ -18,7 +18,6 @@ class VPNMonitor {
     var onDisconnect: (() -> Void)?
 
     func update(interval: TimeInterval = 2.0) {
-        let processRunning = isOpenVPNRunning()
         let iface = findVPNInterface()
 
         var bytesIn: UInt64 = 0
@@ -42,7 +41,7 @@ class VPNMonitor {
         prevBytesIn = bytesIn
         prevBytesOut = bytesOut
 
-        let connected = processRunning && iface != nil
+        let connected = iface != nil
         status = VPNStatus(
             connected: connected,
             interfaceName: iface,
@@ -55,19 +54,6 @@ class VPNMonitor {
             onDisconnect?()
         }
         wasConnected = connected
-    }
-
-    // MARK: - Process check
-
-    private func isOpenVPNRunning() -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        process.arguments = ["-x", "openvpn"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { return false }
-        process.waitUntilExit()
-        return process.terminationStatus == 0
     }
 
     // MARK: - Find active utun interface with a routable IP
