@@ -5,9 +5,13 @@ final class VPNSection: MenuSection {
     private let vpnController: VPNController
     private let actions: MenuActions
 
-    // 用于 refresh 原地更新（仅在 connected 状态下有值）
-    private weak var speedItem: NSMenuItem?
-    private weak var totalItem: NSMenuItem?
+    // 每个 tunnel 一行 speed / 一行 total 的引用，用于 refresh 原地更新。
+    private struct TunnelRow {
+        let interfaceName: String
+        let speedItem: NSMenuItem
+        let totalItem: NSMenuItem
+    }
+    private var rows: [TunnelRow] = []
 
     init(monitor: VPNMonitor, vpnController: VPNController, actions: MenuActions) {
         self.monitor = monitor
@@ -17,41 +21,25 @@ final class VPNSection: MenuSection {
 
     var structureSignature: String {
         let conn = monitor.status.connected ? "TC" : "TD"
-        let hasIP = (monitor.status.localIP != nil && monitor.status.interfaceName != nil) ? "1" : "0"
+        let ifaces = monitor.status.tunnels.map(\.interfaceName).joined(separator: ",")
         let cfg = vpnController.isOpenVPNConfigured ? "c" : "u"
-        return "\(conn)\(hasIP)\(cfg)"
+        return "\(conn)[\(ifaces)]\(cfg)"
     }
 
     func addItems(to menu: NSMenu) -> Bool {
         let vpn = monitor.status
         let headerFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
 
-        speedItem = nil
-        totalItem = nil
+        rows = []
 
         if vpn.connected {
             let header = "\(L10n.vpn): \(L10n.vpnConnected)"
             addHeader(header, font: headerFont, to: menu)
 
-            if let ip = vpn.localIP, let iface = vpn.interfaceName {
-                let detailStr = "  \(iface)  \(ip)"
-                let item = NSMenuItem(title: detailStr, action: nil, keyEquivalent: "")
-                item.isEnabled = false
-                item.attributedTitle = NSAttributedString(string: detailStr, attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
-                    .foregroundColor: NSColor.systemGreen,
-                ])
-                menu.addItem(item)
+            for tunnel in vpn.tunnels {
+                addTunnelBlock(tunnel: tunnel, to: menu)
             }
 
-            let sItem = NSMenuItem()
-            sItem.isEnabled = false
-            menu.addItem(sItem)
-            let tItem = NSMenuItem()
-            tItem.isEnabled = false
-            menu.addItem(tItem)
-            speedItem = sItem
-            totalItem = tItem
             applyRows()
 
             if vpnController.isOpenVPNConfigured {
@@ -92,18 +80,52 @@ final class VPNSection: MenuSection {
         applyRows()
     }
 
+    // MARK: - helpers
+
+    private func addTunnelBlock(tunnel: TunnelInfo, to menu: NSMenu) {
+        if let ip = tunnel.localIP {
+            let detailStr = "  \(tunnel.interfaceName)  \(ip)"
+            let item = NSMenuItem(title: detailStr, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            item.attributedTitle = NSAttributedString(string: detailStr, attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
+                .foregroundColor: NSColor.systemGreen,
+            ])
+            menu.addItem(item)
+        }
+
+        let sItem = NSMenuItem()
+        sItem.isEnabled = false
+        menu.addItem(sItem)
+
+        let tItem = NSMenuItem()
+        tItem.isEnabled = false
+        menu.addItem(tItem)
+
+        rows.append(TunnelRow(
+            interfaceName: tunnel.interfaceName,
+            speedItem: sItem,
+            totalItem: tItem
+        ))
+    }
+
     private func applyRows() {
-        guard let s = speedItem, let t = totalItem else { return }
         let speedFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-        let v = monitor.status
-        let sp = "  ↓ \(VPNMonitor.formatSpeed(monitor.speedIn))  ↑ \(VPNMonitor.formatSpeed(monitor.speedOut))"
-        s.attributedTitle = NSAttributedString(string: sp, attributes: [
-            .font: speedFont, .foregroundColor: NSColor.secondaryLabelColor,
-        ])
-        let tt = "  ↓ \(VPNMonitor.formatBytes(v.bytesIn))  ↑ \(VPNMonitor.formatBytes(v.bytesOut))"
-        t.attributedTitle = NSAttributedString(string: tt, attributes: [
-            .font: speedFont, .foregroundColor: NSColor.tertiaryLabelColor,
-        ])
+        let tunnelsByName = Dictionary(uniqueKeysWithValues: monitor.status.tunnels.map { ($0.interfaceName, $0) })
+
+        for row in rows {
+            guard let tunnel = tunnelsByName[row.interfaceName] else { continue }
+
+            let sp = "  ↓ \(VPNMonitor.formatSpeed(tunnel.speedIn))  ↑ \(VPNMonitor.formatSpeed(tunnel.speedOut))"
+            row.speedItem.attributedTitle = NSAttributedString(string: sp, attributes: [
+                .font: speedFont, .foregroundColor: NSColor.secondaryLabelColor,
+            ])
+
+            let tt = "  ↓ \(VPNMonitor.formatBytes(tunnel.bytesIn))  ↑ \(VPNMonitor.formatBytes(tunnel.bytesOut))"
+            row.totalItem.attributedTitle = NSAttributedString(string: tt, attributes: [
+                .font: speedFont, .foregroundColor: NSColor.tertiaryLabelColor,
+            ])
+        }
     }
 
     @discardableResult
