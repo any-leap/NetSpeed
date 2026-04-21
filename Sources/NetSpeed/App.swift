@@ -23,6 +23,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var watchedSection: WatchedProcessesSection!
     private var vpnSection: VPNSection!
     private var trafficRankSection: TrafficRankSection!
+    private var memorySection: MemorySection!
     private var liveRefreshers: [() -> Void] = []
     private var structureSignature: String = ""
 
@@ -75,6 +76,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         watchedSection = WatchedProcessesSection(cpuMonitor: cpuMonitor, actions: actions)
         vpnSection = VPNSection(monitor: vpnMonitor, actions: actions)
         trafficRankSection = TrafficRankSection(trafficMonitor: trafficMonitor, actions: actions)
+        memorySection = MemorySection(memMonitor: memMonitor, actions: actions)
 
         let latencyRefresh: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -176,6 +178,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
         networkChartSection.refresh()
         trafficRankSection.refresh()
+        memorySection.refresh()
         latencyChartCNSection.refresh()
         latencyChartIntlSection.refresh()
         vpnSection.refresh()
@@ -224,63 +227,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
 
         // --- Memory ---
-        let memHeader = addHeader("", font: headerFont)
-        let memBarItem = addDisabledItem("", font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular))
-        let memDetailFont = NSFont.systemFont(ofSize: 10)
-        let memDetailItem = NSMenuItem()
-        memDetailItem.isEnabled = false
-        menu.addItem(memDetailItem)
-
-        var memProcItems: [NSMenuItem] = []
-        for _ in memMonitor.topProcesses {
-            let item = NSMenuItem()
-            let sub = NSMenu()
-            let killItem = NSMenuItem(title: "", action: #selector(MenuActions.killProcess(_:)), keyEquivalent: "")
-            killItem.target = actions
-            sub.addItem(killItem)
-            item.submenu = sub
-            menu.addItem(item)
-            memProcItems.append(item)
-        }
-
-        let applyMem: () -> Void = { [weak self, weak memHeader, weak memBarItem, weak memDetailItem] in
-            guard let self = self else { return }
-            let mem = self.memMonitor.info
-            let memUsed = MemoryMonitor.formatBytes(mem.used)
-            let memTotal = MemoryMonitor.formatBytes(mem.total)
-            let memPct = String(format: "%.0f%%", mem.usagePercent)
-            memHeader?.attributedTitle = NSAttributedString(
-                string: "\(L10n.memory): \(memUsed) / \(memTotal) (\(memPct))",
-                attributes: [.font: headerFont])
-
-            let memBarWidth = 30
-            let memFilled = Int(mem.usagePercent / 100.0 * Double(memBarWidth))
-            let memBar = String(repeating: "▓", count: min(memFilled, memBarWidth)) + String(repeating: "░", count: max(memBarWidth - memFilled, 0))
-            memBarItem?.attributedTitle = NSAttributedString(
-                string: "  \(memBar)",
-                attributes: [.font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)])
-
-            let appMem = MemoryMonitor.formatBytes(mem.appMemory)
-            let wiredMem = MemoryMonitor.formatBytes(mem.wired)
-            let compMem = MemoryMonitor.formatBytes(mem.compressed)
-            let detailStr = "  \(L10n.app): \(appMem)  \(L10n.wired): \(wiredMem)  \(L10n.compressed): \(compMem)"
-            memDetailItem?.attributedTitle = NSAttributedString(string: detailStr, attributes: [
-                .font: memDetailFont, .foregroundColor: NSColor.secondaryLabelColor,
-            ])
-
-            let procs = self.memMonitor.topProcesses
-            for (i, proc) in procs.enumerated() where i < memProcItems.count {
-                let memStr = MemoryMonitor.formatBytes(proc.mem)
-                let title = "  \(memStr.padding(toLength: 10, withPad: " ", startingAt: 0)) \(proc.name)"
-                memProcItems[i].attributedTitle = NSAttributedString(string: title, attributes: [.font: bodyFont])
-                if let killItem = memProcItems[i].submenu?.items.first {
-                    killItem.title = "\(L10n.kill) \(proc.name) (PID \(proc.pid))"
-                    killItem.tag = proc.pid
-                }
-            }
-        }
-        applyMem()
-        liveRefreshers.append(applyMem)
+        _ = memorySection.addItems(to: menu)
 
         menu.addItem(NSMenuItem.separator())
 
