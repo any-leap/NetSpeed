@@ -27,6 +27,7 @@ class CPUMonitor {
     let watchedProcesses: [String] = ["bird"]
 
     private var prevCPUInfo: host_cpu_load_info?
+    private let lister = ProcessLister()
     private var sustainedCounts: [Int: Int] = [:]
     private var lastAlertTime: [String: Date] = [:]
     private(set) var recentAlerts: [AlertRecord] = []
@@ -104,14 +105,7 @@ class CPUMonitor {
     }
 
     private func isProcessRunning(name: String) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        process.arguments = ["-x", name]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { return false }
-        process.waitUntilExit()
-        return process.terminationStatus == 0
+        return lister.isProcessRunning(name: name)
     }
 
     private func sendNotification(title: String, message: String) {
@@ -159,38 +153,6 @@ class CPUMonitor {
     }
 
     func readTopProcesses(count: Int) -> [TopProcess] {
-        let pipe = Pipe()
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-eo", "pid=,pcpu=,comm=", "-r"]
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do { try process.run() } catch { return [] }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        guard let output = String(data: data, encoding: .utf8) else { return [] }
-
-        var results: [TopProcess] = []
-        for line in output.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty { continue }
-
-            let parts = trimmed.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
-            guard parts.count >= 3,
-                  let pid = Int(parts[0]),
-                  let cpu = Double(parts[1]) else { continue }
-
-            let fullPath = String(parts[2])
-            let name = (fullPath as NSString).lastPathComponent
-
-            if name == "kernel_task" { continue }
-
-            results.append(TopProcess(pid: pid, name: name, cpu: cpu))
-            if results.count >= count { break }
-        }
-        return results
+        return lister.topProcesses(limit: count)
     }
 }
