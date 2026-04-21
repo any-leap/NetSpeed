@@ -27,8 +27,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var cpuSection: CPUSection!
     private var abnormalSection: AbnormalProcessesSection!
     private var alertsSection: RecentAlertsSection!
-    private var liveRefreshers: [() -> Void] = []
-    private var structureSignature: String = ""
+    private var menuBuilder: MenuBuilder!
+    private var savedSignature: String = ""
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -83,6 +83,20 @@ class StatusBarController: NSObject, NSMenuDelegate {
         cpuSection = CPUSection(cpuMonitor: cpuMonitor, actions: actions)
         abnormalSection = AbnormalProcessesSection(cpuMonitor: cpuMonitor, actions: actions)
         alertsSection = RecentAlertsSection(cpuMonitor: cpuMonitor)
+
+        menuBuilder = MenuBuilder(menu: menu, sections: [
+            latencyChartCNSection,
+            latencyChartIntlSection,
+            networkChartSection,
+            watchedSection,
+            vpnSection,
+            trafficRankSection,
+            memorySection,
+            cpuSection,
+            abnormalSection,
+            alertsSection,
+            quitSection,
+        ])
 
         let latencyRefresh: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -178,101 +192,16 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
     private func refreshLiveViews() {
         trafficMonitor.update()
-        if currentStructureSignature() != structureSignature {
+        if menuBuilder.structureSignature != savedSignature {
             rebuildMenu()
             return
         }
-        networkChartSection.refresh()
-        trafficRankSection.refresh()
-        memorySection.refresh()
-        cpuSection.refresh()
-        latencyChartCNSection.refresh()
-        latencyChartIntlSection.refresh()
-        vpnSection.refresh()
-        for r in liveRefreshers { r() }
-    }
-
-    private func currentStructureSignature() -> String {
-        let memCount = memMonitor.topProcesses.count
-        let cpuCount = cpuMonitor.topProcesses.count
-        let chartReady = netMonitor.downHistory.count >= 2 ? "1" : "0"
-        let watchedAlive = watchedSection.structureSignature
-        // abnormalCount and alertCount intentionally excluded — those sections
-        // refresh on next menu open; changing them mid-open would force a rebuild/flash.
-        let latencyCNReady = latencyMonitorCN.history.count >= 2 ? "1" : "0"
-        let latencyIntlReady = latencyMonitorIntl.history.count >= 2 ? "1" : "0"
-        return "\(vpnSection.structureSignature)|\(memCount)|\(cpuCount)|\(chartReady)|\(watchedAlive)|\(latencyCNReady)\(latencyIntlReady)"
+        menuBuilder.refresh()
     }
 
     private func rebuildMenu() {
-        menu.removeAllItems()
-        liveRefreshers = []
-        structureSignature = currentStructureSignature()
-
-        let headerFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        let bodyFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-
-        // --- Latency Charts (Mainland / Overseas) ---
-        _ = latencyChartCNSection.addItems(to: menu)
-        _ = latencyChartIntlSection.addItems(to: menu)
-
-        // --- Network Chart ---
-        _ = networkChartSection.addItems(to: menu)
-
-        // --- Watched processes ---
-        menu.addItem(NSMenuItem.separator())
-        _ = watchedSection.addItems(to: menu)
-
-        // --- VPN Status ---
-        menu.addItem(NSMenuItem.separator())
-        _ = vpnSection.addItems(to: menu)
-
-        // --- Traffic by Process ---
-        menu.addItem(NSMenuItem.separator())
-        _ = trafficRankSection.addItems(to: menu)
-
-        menu.addItem(NSMenuItem.separator())
-
-        // --- Memory ---
-        _ = memorySection.addItems(to: menu)
-
-        menu.addItem(NSMenuItem.separator())
-
-        // --- CPU ---
-        _ = cpuSection.addItems(to: menu)
-
-        // --- Abnormal processes (CPUGuard) ---
-        if !cpuMonitor.abnormalProcesses.isEmpty {
-            menu.addItem(NSMenuItem.separator())
-            _ = abnormalSection.addItems(to: menu)
-        }
-
-        // --- Recent Alerts ---
-        if !cpuMonitor.recentAlerts.isEmpty {
-            menu.addItem(NSMenuItem.separator())
-            _ = alertsSection.addItems(to: menu)
-        }
-
-        menu.addItem(NSMenuItem.separator())
-        _ = quitSection.addItems(to: menu)
-    }
-
-    @discardableResult
-    private func addHeader(_ title: String, font: NSFont) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        item.attributedTitle = NSAttributedString(string: title, attributes: [.font: font])
-        menu.addItem(item)
-        return item
-    }
-
-    @discardableResult
-    private func addDisabledItem(_ title: String, font: NSFont) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        item.attributedTitle = NSAttributedString(string: title, attributes: [.font: font])
-        menu.addItem(item)
-        return item
+        savedSignature = menuBuilder.structureSignature
+        menuBuilder.rebuild()
     }
 
     deinit {
