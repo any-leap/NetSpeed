@@ -13,6 +13,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private let notifier = NotificationHelper()
     private var vpnController: VPNController!
     private var actions: MenuActions!
+    private var quitSection: QuitSection!
     private weak var latencyChartCN: LatencyChartView?
     private weak var latencyChartIntl: LatencyChartView?
     private var menu: NSMenu
@@ -55,6 +56,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
             vpnController: vpnController
         )
         actions.onNeedsRebuild = { [weak self] in self?.rebuildMenu() }
+
+        quitSection = QuitSection(actions: actions)
 
         let latencyRefresh: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -537,10 +540,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(NSMenuItem.separator())
-
-        let quitItem = NSMenuItem(title: L10n.quit, action: #selector(MenuActions.quit), keyEquivalent: "q")
-        quitItem.target = actions
-        menu.addItem(quitItem)
+        _ = quitSection.addItems(to: menu)
     }
 
     @discardableResult
