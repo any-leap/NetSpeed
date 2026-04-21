@@ -19,6 +19,10 @@ final class VPNController {
 
     var isConnected: Bool { monitor.status.connected }
 
+    var isOpenVPNConfigured: Bool {
+        UserDefaults.standard.string(forKey: Self.vpnConfigKey) != nil
+    }
+
     func toggle() {
         if monitor.status.connected {
             disconnect()
