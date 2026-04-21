@@ -24,6 +24,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var vpnSection: VPNSection!
     private var trafficRankSection: TrafficRankSection!
     private var memorySection: MemorySection!
+    private var cpuSection: CPUSection!
     private var liveRefreshers: [() -> Void] = []
     private var structureSignature: String = ""
 
@@ -77,6 +78,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         vpnSection = VPNSection(monitor: vpnMonitor, actions: actions)
         trafficRankSection = TrafficRankSection(trafficMonitor: trafficMonitor, actions: actions)
         memorySection = MemorySection(memMonitor: memMonitor, actions: actions)
+        cpuSection = CPUSection(cpuMonitor: cpuMonitor, actions: actions)
 
         let latencyRefresh: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -179,6 +181,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         networkChartSection.refresh()
         trafficRankSection.refresh()
         memorySection.refresh()
+        cpuSection.refresh()
         latencyChartCNSection.refresh()
         latencyChartIntlSection.refresh()
         vpnSection.refresh()
@@ -232,49 +235,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
 
         // --- CPU ---
-        let cpuHeader = addHeader("", font: headerFont)
-        let cpuBarItem = addDisabledItem("", font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular))
-
-        var cpuProcItems: [NSMenuItem] = []
-        for _ in cpuMonitor.topProcesses {
-            let item = NSMenuItem()
-            let sub = NSMenu()
-            let killItem = NSMenuItem(title: "", action: #selector(MenuActions.killProcess(_:)), keyEquivalent: "")
-            killItem.target = actions
-            sub.addItem(killItem)
-            item.submenu = sub
-            menu.addItem(item)
-            cpuProcItems.append(item)
-        }
-
-        let applyCPU: () -> Void = { [weak self, weak cpuHeader, weak cpuBarItem] in
-            guard let self = self else { return }
-            let cpuStr = String(format: "%.1f%%", self.cpuMonitor.cpuUsage)
-            cpuHeader?.attributedTitle = NSAttributedString(string: "\(L10n.cpu): \(cpuStr)", attributes: [.font: headerFont])
-            let barWidth = 30
-            let filled = Int(self.cpuMonitor.cpuUsage / 100.0 * Double(barWidth))
-            let bar = String(repeating: "▓", count: min(filled, barWidth)) + String(repeating: "░", count: max(barWidth - filled, 0))
-            cpuBarItem?.attributedTitle = NSAttributedString(
-                string: "  \(bar)",
-                attributes: [.font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)])
-
-            let procs = self.cpuMonitor.topProcesses
-            for (i, proc) in procs.enumerated() where i < cpuProcItems.count {
-                let cpuFmt = String(format: "%5.1f%%", proc.cpu)
-                let title = "  \(cpuFmt)  \(proc.name)"
-                let isAbnormal = self.cpuMonitor.sustainedPids.contains(proc.pid)
-                let attrs: [NSAttributedString.Key: Any] = isAbnormal
-                    ? [.font: bodyFont, .foregroundColor: NSColor.systemRed]
-                    : [.font: bodyFont]
-                cpuProcItems[i].attributedTitle = NSAttributedString(string: title, attributes: attrs)
-                if let killItem = cpuProcItems[i].submenu?.items.first {
-                    killItem.title = "\(L10n.kill) \(proc.name) (PID \(proc.pid))"
-                    killItem.tag = proc.pid
-                }
-            }
-        }
-        applyCPU()
-        liveRefreshers.append(applyCPU)
+        _ = cpuSection.addItems(to: menu)
 
         // --- Abnormal processes (CPUGuard) ---
         if !cpuMonitor.abnormalProcesses.isEmpty {
