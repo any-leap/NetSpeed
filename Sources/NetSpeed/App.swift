@@ -19,7 +19,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var menu: NSMenu
     private var guardTimer: Timer?
     private var menuIsOpen = false
-    private weak var chartView: ChartView?
+    private var networkChartSection: NetworkChartSection!
     private weak var trafficRankView: TrafficRankView?
     private var liveRefreshers: [() -> Void] = []
     private var structureSignature: String = ""
@@ -69,6 +69,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
             title: L10n.latencyOverseas,
             lineColor: .systemPurple
         )
+        networkChartSection = NetworkChartSection(monitor: netMonitor)
 
         let latencyRefresh: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -168,12 +169,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
             rebuildMenu()
             return
         }
-        chartView?.update(
-            downData: netMonitor.downHistory,
-            upData: netMonitor.upHistory,
-            downLabel: "↓ \(netMonitor.downSpeed)",
-            upLabel: "↑ \(netMonitor.upSpeed)"
-        )
+        networkChartSection.refresh()
         trafficRankView?.update(
             liveTop: trafficMonitor.topByLive,
             cumulativeTop: trafficMonitor.topByCumulative
@@ -219,22 +215,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         _ = latencyChartIntlSection.addItems(to: menu)
 
         // --- Network Chart ---
-        if netMonitor.downHistory.count >= 2 {
-            let chartItem = NSMenuItem()
-            let chartView = ChartView(
-                downData: netMonitor.downHistory,
-                upData: netMonitor.upHistory,
-                maxHistory: netMonitor.maxHistory,
-                downLabel: "↓ \(netMonitor.downSpeed)",
-                upLabel: "↑ \(netMonitor.upSpeed)",
-                title: L10n.network,
-                formatMax: { [weak self] v in self?.netMonitor.formatSpeed(v) ?? "" }
-            )
-            chartItem.view = chartView
-            chartItem.isEnabled = false
-            self.chartView = chartView
-            menu.addItem(chartItem)
-        }
+        _ = networkChartSection.addItems(to: menu)
 
         // --- Watched processes (e.g. bird) ---
         menu.addItem(NSMenuItem.separator())
