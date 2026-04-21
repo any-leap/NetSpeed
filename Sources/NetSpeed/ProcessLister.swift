@@ -51,6 +51,29 @@ final class ProcessLister {
         return Array(results.sorted { $0.cpu > $1.cpu }.prefix(limit))
     }
 
+    /// 按 RSS 降序返回 top N 进程。无状态（不需要像 CPU 那样的前后采样）。
+    /// kernel_task / NetSpeed 自动跳过（与原 ps 版本行为一致）。
+    func topMemoryProcesses(limit: Int) -> [MemProcess] {
+        let pids = listAllPIDs()
+        var results: [MemProcess] = []
+
+        for pid in pids {
+            guard pid > 0 else { continue }
+
+            var info = proc_taskinfo()
+            let infoSize = Int32(MemoryLayout<proc_taskinfo>.size)
+            let rc = proc_pidinfo(pid, Self.PROC_PIDTASKINFO, 0, &info, infoSize)
+            guard rc == infoSize else { continue }
+
+            let name = processName(pid: pid)
+            if name == "kernel_task" || name == "NetSpeed" { continue }
+
+            results.append(MemProcess(pid: Int(pid), name: name, mem: info.pti_resident_size))
+        }
+
+        return Array(results.sorted { $0.mem > $1.mem }.prefix(limit))
+    }
+
     /// 遍历所有 PID 按名匹配。替代 `pgrep -x <name>`。
     func isProcessRunning(name: String) -> Bool {
         let pids = listAllPIDs()

@@ -30,10 +30,11 @@ struct MemProcess {
 class MemoryMonitor {
     var info = MemoryInfo()
     var topProcesses: [MemProcess] = []
+    private let lister = ProcessLister()
 
     func update() {
         info = readMemoryInfo()
-        topProcesses = readTopProcesses()
+        topProcesses = lister.topMemoryProcesses(limit: 5)
     }
 
     private func readMemoryInfo() -> MemoryInfo {
@@ -70,40 +71,6 @@ class MemoryMonitor {
         info.free = free
         info.used = active + wired + compressed
         return info
-    }
-
-    private func readTopProcesses() -> [MemProcess] {
-        let pipe = Pipe()
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-eo", "pid=,rss=,comm=", "-m"]
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do { try process.run() } catch { return [] }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        guard let output = String(data: data, encoding: .utf8) else { return [] }
-
-        var results: [MemProcess] = []
-        for line in output.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty { continue }
-
-            let parts = trimmed.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
-            guard parts.count >= 3,
-                  let pid = Int(parts[0]),
-                  let rssKB = UInt64(parts[1]) else { continue }
-
-            let name = (String(parts[2]) as NSString).lastPathComponent
-            if name == "kernel_task" || name == "NetSpeed" { continue }
-
-            results.append(MemProcess(pid: pid, name: name, mem: rssKB * 1024))
-            if results.count >= 5 { break }
-        }
-        return results
     }
 
     static func formatBytes(_ bytes: UInt64) -> String {

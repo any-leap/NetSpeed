@@ -81,5 +81,5 @@ Do not start reverting commits based on "icon gone" alone. We learned this the h
 2. ✅ README overhaul + CI release pipeline (DMG auto-build)
 3. ✅ Split `App.swift` — data-driven MenuSection protocol + MenuBuilder + 11 extracted sections + VPNController + NotificationHelper + MenuActions. App.swift 663 → 227 lines.
 4. ✅ Generalize VPN monitor: any utun-based VPN → connected; Connect/Disconnect buttons only shown when user has configured `.ovpn`; user-facing "VPN" renamed to "Tunnel / 隧道" (class names kept as-is).
-5. Replace `subprocess top/nettop` with native `libproc` / `host_statistics` for lower self-overhead
+5. ✅ Replace `/bin/ps` and `/usr/bin/pgrep` with native libproc (ProcessLister wrapping `proc_listpids` / `proc_pidinfo`). CPUMonitor + MemoryMonitor share the implementation. Idle CPU footprint dropped ~15× (from ~4-6% to ~0.2-0.5%). `nettop` and `osascript` kept intentionally (private SPI risk / low ROI).
 6. Homebrew cask submission (requires stable Releases)
