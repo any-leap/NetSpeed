@@ -5,7 +5,6 @@ struct TopProcess {
     let pid: Int
     let name: String
     let cpu: Double
-    let mem: Double
 }
 
 struct AlertRecord {
@@ -163,7 +162,7 @@ class CPUMonitor {
         let pipe = Pipe()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-eo", "pid=,pcpu=,pmem=,comm=", "-r"]
+        process.arguments = ["-eo", "pid=,pcpu=,comm=", "-r"]
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
 
@@ -179,18 +178,17 @@ class CPUMonitor {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { continue }
 
-            let parts = trimmed.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
-            guard parts.count >= 4,
+            let parts = trimmed.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+            guard parts.count >= 3,
                   let pid = Int(parts[0]),
-                  let cpu = Double(parts[1]),
-                  let mem = Double(parts[2]) else { continue }
+                  let cpu = Double(parts[1]) else { continue }
 
-            let fullPath = String(parts[3])
+            let fullPath = String(parts[2])
             let name = (fullPath as NSString).lastPathComponent
 
             if name == "kernel_task" { continue }
 
-            results.append(TopProcess(pid: pid, name: name, cpu: cpu, mem: mem))
+            results.append(TopProcess(pid: pid, name: name, cpu: cpu))
             if results.count >= count { break }
         }
         return results
