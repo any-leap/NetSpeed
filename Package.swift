@@ -16,6 +16,10 @@ let package = Package(
                     "-Xlinker", "Sources/NetSpeed/Info.plist",
                 ]),
             ]
-        )
+        ),
+        .testTarget(
+            name: "NetSpeedTests",
+            dependencies: ["NetSpeed"]
+        ),
     ]
 )
