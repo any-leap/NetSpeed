@@ -27,6 +27,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var cpuSection: CPUSection!
     private var abnormalSection: AbnormalProcessesSection!
     private var alertsSection: RecentAlertsSection!
+    private var quotaMonitor = QuotaMonitor()
+    private var quotaSection: QuotaSection!
     private var menuBuilder: MenuBuilder!
     private var savedSignature: String = ""
 
@@ -83,6 +85,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         cpuSection = CPUSection(cpuMonitor: cpuMonitor, actions: actions)
         abnormalSection = AbnormalProcessesSection(cpuMonitor: cpuMonitor, actions: actions)
         alertsSection = RecentAlertsSection(cpuMonitor: cpuMonitor)
+        quotaSection = QuotaSection(monitor: quotaMonitor)
 
         menuBuilder = MenuBuilder(menu: menu, sections: [
             latencyChartCNSection,
@@ -90,6 +93,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
             networkChartSection,
             watchedSection,
             vpnSection,
+            quotaSection,
             trafficRankSection,
             memorySection,
             cpuSection,
@@ -106,6 +110,12 @@ class StatusBarController: NSObject, NSMenuDelegate {
         latencyMonitorIntl.onUpdate = latencyRefresh
         latencyMonitorCN.start()
         latencyMonitorIntl.start()
+
+        quotaMonitor.onUpdate = { [weak self] in
+            guard let self = self else { return }
+            if self.menuIsOpen { self.refreshLiveViews() }
+        }
+        quotaMonitor.start()
 
         menu.delegate = self
         statusItem.menu = menu
