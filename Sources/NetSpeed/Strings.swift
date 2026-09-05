@@ -76,5 +76,17 @@ extension L10n {
     static var caffeineOff: String { isChinese ? "咖啡因：未开启" : "Caffeine: Off" }
     static var caffeineUnknown: String { isChinese ? "咖啡因：状态读取失败" : "Caffeine: Status unavailable" }
     static var caffeineError: String { isChinese ? "无法切换保持唤醒" : "Could not toggle Keep Awake" }
-    static var caffeineExplanation: String { isChinese ? "防止闲置休眠，屏幕仍可熄灭。退出 NetSpeed 后失效；不影响其他 App 的防休眠。" : "Prevents idle system sleep; display may sleep. Ends when NetSpeed quits. Other apps are unaffected." }
+    static var caffeineExplanation: String { isChinese ? "防止闲置休眠，屏幕仍可熄灭；不阻止合盖休眠。退出 NetSpeed 后失效；不影响其他 App 的防休眠。" : "Prevents idle system sleep; display may sleep. Does not prevent lid-close sleep. Ends when NetSpeed quits. Other apps are unaffected." }
+    static var lidToggle: String { isChinese ? "合盖保持运行（最多 2 小时）…" : "Keep Running with Lid Closed (up to 2h)…" }
+    static var lidActive: String { isChinese ? "合盖保持运行：已开启（点击关闭）" : "Lid Closed: Keeping Awake (Click to Stop)" }
+    static var lidAuthorizing: String { isChinese ? "合盖保持运行：正在授权…" : "Lid Closed: Authorizing…" }
+    static var lidRestoring: String { isChinese ? "合盖保持运行：正在恢复睡眠…" : "Lid Closed: Restoring Sleep…" }
+    static var lidUnknown: String { isChinese ? "合盖保持运行：状态读取失败" : "Lid Closed: Status Unavailable" }
+    static var lidExplanation: String { isChinese ? "需要管理员授权，全局禁用系统睡眠。关闭、退出或达到 2 小时后恢复；电池供电降至 20% 时恢复。合盖仍耗电发热，请保持通风。" : "Requires administrator authorization; disables system sleep globally. Restores on stop, app exit, after 2 hours, or at 20% on battery power. Keep the Mac ventilated." }
+    static var lidRecovery: String { isChinese ? "恢复系统睡眠…" : "Restore System Sleep…" }
+    static var lidRecoveryExplanation: String { isChinese ? "检测到系统禁用睡眠或上次会话遗留状态。恢复会关闭全局防休眠设置，也可能影响其他工具设置的合盖模式。" : "System sleep is disabled or a previous session needs recovery. Restoring clears the global setting, which may affect closed-lid modes enabled by other tools." }
+    static var lidRestoreButton: String { isChinese ? "恢复睡眠" : "Restore Sleep" }
+    static var lidCancel: String { isChinese ? "取消" : "Cancel" }
+    static var lidError: String { isChinese ? "无法切换合盖保持运行" : "Could Not Change Closed-Lid Mode" }
+
 }
