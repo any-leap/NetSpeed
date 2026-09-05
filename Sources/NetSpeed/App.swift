@@ -27,6 +27,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var cpuSection: CPUSection!
     private var abnormalSection: AbnormalProcessesSection!
     private var alertsSection: RecentAlertsSection!
+    private let caffeineMonitor = CaffeineMonitor()
     private var quotaMonitor = QuotaMonitor()
     private var quotaSection: QuotaSection!
     private var menuBuilder: MenuBuilder!
@@ -94,6 +95,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
             watchedSection,
             vpnSection,
             quotaSection,
+            CaffeineSection(monitor: caffeineMonitor),
             trafficRankSection,
             memorySection,
             cpuSection,
@@ -131,6 +133,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
             self?.cpuMonitor.update()
             self?.memMonitor.update()
             self?.vpnMonitor.update()
+            self?.caffeineMonitor.update()
             self?.updateLabel()
             if self?.menuIsOpen == true {
                 self?.refreshLiveViews()
@@ -191,6 +194,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         menuIsOpen = true
+        caffeineMonitor.update()
         cpuMonitor.update()
         trafficMonitor.update()
         rebuildMenu()

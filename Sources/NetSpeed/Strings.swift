@@ -67,3 +67,14 @@ struct L10n {
         }
     }
 }
+
+
+extension L10n {
+    static var caffeineToggle: String { isChinese ? "保持唤醒（NetSpeed）" : "Keep Awake (NetSpeed)" }
+    static var caffeineOwn: String { isChinese ? "咖啡因：已开启 · NetSpeed" : "Caffeine: On · NetSpeed" }
+    static var caffeineExternal: String { isChinese ? "咖啡因：其他 App / 系统保持唤醒" : "Caffeine: Other app / system keeping awake" }
+    static var caffeineOff: String { isChinese ? "咖啡因：未开启" : "Caffeine: Off" }
+    static var caffeineUnknown: String { isChinese ? "咖啡因：状态读取失败" : "Caffeine: Status unavailable" }
+    static var caffeineError: String { isChinese ? "无法切换保持唤醒" : "Could not toggle Keep Awake" }
+    static var caffeineExplanation: String { isChinese ? "防止闲置休眠，屏幕仍可熄灭。退出 NetSpeed 后失效；不影响其他 App 的防休眠。" : "Prevents idle system sleep; display may sleep. Ends when NetSpeed quits. Other apps are unaffected." }
+}
