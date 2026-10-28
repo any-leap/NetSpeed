@@ -16,6 +16,11 @@ final class LatencyMonitor: NSObject, URLSessionTaskDelegate {
 
     private var timer: Timer?
 
+    // 每次测速要发好几个 HTTPS 请求，网卡因此一直醒着；只有菜单打开时才按 5 秒测，平时 60 秒一次。
+    private static let fastInterval: TimeInterval = 5
+    private static let slowInterval: TimeInterval = 60
+    private var interval = LatencyMonitor.slowInterval
+
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 3.0
@@ -44,8 +49,22 @@ final class LatencyMonitor: NSObject, URLSessionTaskDelegate {
 
     func start() {
         stop()
-        tick()  // 立即跑一次，不用等 5 秒才出第一个数据点
-        let t = Timer(timeInterval: 5.0, repeats: true) { [weak self] _ in
+        tick()  // 立即跑一次，不用等一个周期才出第一个数据点
+        schedule()
+    }
+
+    /// 菜单打开时切到 5 秒并立即测一次，关上后回到 60 秒。
+    func setFastPolling(_ fast: Bool) {
+        let next = fast ? Self.fastInterval : Self.slowInterval
+        guard next != interval else { return }
+        interval = next
+        if fast { tick() }
+        schedule()
+    }
+
+    private func schedule() {
+        timer?.invalidate()
+        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             self?.tick()
         }
         RunLoop.main.add(t, forMode: .common)

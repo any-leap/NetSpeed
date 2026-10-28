@@ -130,13 +130,15 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
 
         netMonitor.onChange = { [weak self] in
-            self?.cpuMonitor.update()
-            self?.memMonitor.update()
-            self?.vpnMonitor.update()
-            self?.caffeineMonitor.update()
-            self?.updateLabel()
-            if self?.menuIsOpen == true {
-                self?.refreshLiveViews()
+            guard let self = self else { return }
+            self.vpnMonitor.update()
+            self.caffeineMonitor.update()
+            self.updateLabel()
+            // CPU/内存排行要遍历全部进程，只有菜单里看得到，菜单关着就不扫（CPU 异常告警有自己的 10 秒扫描）。
+            if self.menuIsOpen {
+                self.cpuMonitor.update()
+                self.memMonitor.update()
+                self.refreshLiveViews()
             }
         }
 
@@ -196,12 +198,17 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menuIsOpen = true
         caffeineMonitor.update()
         cpuMonitor.update()
+        memMonitor.update()
+        latencyMonitorCN.setFastPolling(true)
+        latencyMonitorIntl.setFastPolling(true)
         trafficMonitor.update()
         rebuildMenu()
     }
 
     func menuDidClose(_ menu: NSMenu) {
         menuIsOpen = false
+        latencyMonitorCN.setFastPolling(false)
+        latencyMonitorIntl.setFastPolling(false)
     }
 
     private func refreshLiveViews() {
