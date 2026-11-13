@@ -1,4 +1,3 @@
-import SwiftUI
 import AppKit
 
 class StatusBarController: NSObject, NSMenuDelegate {
@@ -238,11 +237,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+// 纯 AppKit 入口，不用 SwiftUI App：SwiftUI 的 App 至少要一个 Scene，之前塞的空
+// `Settings { EmptyView() }` 会被系统窗口恢复在开机/登录时弹出一个空白
+// "NetSpeed Settings" 窗口。菜单栏应用不需要任何窗口。
 @main
-struct NetSpeedApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
-
-    var body: some Scene {
-        Settings { EmptyView() }
+enum NetSpeedMain {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        withExtendedLifetime(delegate) { app.run() }
     }
 }
