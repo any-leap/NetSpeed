@@ -9,6 +9,18 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let model = SettingsModel(prefs: .shared)
 
+    override init() {
+        super.init()
+        // 从菜单「退出」时窗口不走 windowWillClose，也要把没提交的列表存下来。
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.model.commitLists() }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        model.commitLists()
+    }
+
     func show() {
         model.reload()
         let win = window ?? makeWindow()
@@ -40,10 +52,12 @@ final class SettingsModel: ObservableObject {
 
     @Published var threshold: Double = 0 { didSet { if !loading { prefs.cpuThreshold = threshold } } }
     @Published var sustained: Int = 0 { didSet { if !loading { prefs.sustainedSeconds = sustained } } }
-    @Published var ignoredText = "" { didSet { if !loading { prefs.ignoredProcesses = Preferences.parseList(ignoredText) } } }
-    @Published var watchedText = "" { didSet { if !loading { prefs.watchedProcesses = Preferences.parseList(watchedText) } } }
-    @Published var cnText = "" { didSet { if !loading { cnError = saveTargets(cnText) { self.prefs.latencyTargetsCN = $0 } } } }
-    @Published var intlText = "" { didSet { if !loading { intlError = saveTargets(intlText) { self.prefs.latencyTargetsIntl = $0 } } } }
+    // 多行列表是草稿，离开输入框 / 关窗 / 退出时才提交：逐字保存的话，打到一半的
+    // 「ssh」会被当成关注进程触发「未运行」通知，「https://www.ba」会被拿去测速。
+    @Published var ignoredText = ""
+    @Published var watchedText = ""
+    @Published var cnText = ""
+    @Published var intlText = ""
     @Published var cnError: String?
     @Published var intlError: String?
     @Published var configPath: String?
@@ -67,6 +81,15 @@ final class SettingsModel: ObservableObject {
         intlError = nil
         configPath = prefs.openVPNConfigPath
         authPath = prefs.openVPNAuthPath
+    }
+
+    func commitLists() {
+        let ignored = Preferences.parseList(ignoredText)
+        if ignored != prefs.ignoredProcesses { prefs.ignoredProcesses = ignored }
+        let watched = Preferences.parseList(watchedText)
+        if watched != prefs.watchedProcesses { prefs.watchedProcesses = watched }
+        cnError = saveTargets(cnText, current: prefs.latencyTargetsCN) { self.prefs.latencyTargetsCN = $0 }
+        intlError = saveTargets(intlText, current: prefs.latencyTargetsIntl) { self.prefs.latencyTargetsIntl = $0 }
     }
 
     func resetMonitoringDefaults() {
@@ -97,12 +120,12 @@ final class SettingsModel: ObservableObject {
     }
 
     /// 合法就保存并返回 nil，否则返回错误文案、不保存。
-    private func saveTargets(_ text: String, _ save: ([String]) -> Void) -> String? {
+    private func saveTargets(_ text: String, current: [String], _ save: ([String]) -> Void) -> String? {
         let list = Preferences.parseList(text)
         if list.isEmpty { return L10n.settingsNeedOneURL }
         let invalid = Preferences.invalidLatencyTargets(list)
         if !invalid.isEmpty { return L10n.settingsInvalidURLs(invalid) }
-        save(list)
+        if list != current { save(list) }
         return nil
     }
 
@@ -119,37 +142,41 @@ final class SettingsModel: ObservableObject {
 
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
+    @FocusState private var focused: ListField?
+
+    enum ListField { case ignored, watched, cn, intl }
 
     var body: some View {
         Form {
             Section {
-                LabeledContent(L10n.settingsThreshold) {
-                    HStack {
-                        Slider(value: $model.threshold, in: Preferences.cpuThresholdRange, step: 5)
-                        Text("\(Int(model.threshold))%")
-                            .monospacedDigit()
-                            .frame(width: 48, alignment: .trailing)
+                VStack(alignment: .leading, spacing: 6) {
+                    LabeledContent(L10n.settingsThreshold) {
+                        HStack {
+                            Slider(value: $model.threshold, in: Preferences.cpuThresholdRange)
+                            Text("\(Int(model.threshold))%")
+                                .monospacedDigit()
+                                .frame(width: 48, alignment: .trailing)
+                        }
                     }
+                    Text(L10n.settingsThresholdHelp).font(.caption).foregroundStyle(.secondary)
                 }
                 Stepper(value: $model.sustained,
                         in: Preferences.sustainedSecondsRange,
                         step: Preferences.sustainedSecondsStep) {
                     LabeledContent(L10n.settingsSustained, value: L10n.seconds(model.sustained))
                 }
-                listEditor(L10n.settingsIgnored, text: $model.ignoredText, help: L10n.settingsIgnoredHelp)
+                listEditor(L10n.settingsIgnored, text: $model.ignoredText, field: .ignored, help: L10n.settingsIgnoredHelp)
             } header: {
                 Text(L10n.settingsCPUSection)
-            } footer: {
-                Text(L10n.settingsThresholdHelp).foregroundStyle(.secondary)
             }
 
             Section(L10n.settingsWatchedSection) {
-                listEditor(nil, text: $model.watchedText, help: L10n.settingsWatchedHelp, height: 48)
+                listEditor(nil, text: $model.watchedText, field: .watched, help: L10n.settingsWatchedHelp, height: 48)
             }
 
             Section {
-                listEditor(L10n.latencyMainland, text: $model.cnText, error: model.cnError)
-                listEditor(L10n.latencyOverseas, text: $model.intlText, error: model.intlError)
+                listEditor(L10n.latencyMainland, text: $model.cnText, field: .cn, error: model.cnError)
+                listEditor(L10n.latencyOverseas, text: $model.intlText, field: .intl, error: model.intlError)
             } header: {
                 Text(L10n.settingsLatencySection)
             } footer: {
@@ -183,14 +210,17 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onChange(of: focused) { model.commitLists() }
     }
 
     @ViewBuilder
-    private func listEditor(_ title: String?, text: Binding<String>, help: String? = nil,
+    private func listEditor(_ title: String?, text: Binding<String>, field: ListField, help: String? = nil,
                             error: String? = nil, height: CGFloat = 72) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if let title { Text(title) }
             TextEditor(text: text)
+                .focused($focused, equals: field)
+                .autocorrectionDisabled()
                 .font(.system(.body, design: .monospaced))
                 .scrollContentBackground(.hidden)
                 .padding(4)

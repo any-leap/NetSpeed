@@ -122,5 +122,5 @@ extension L10n {
     static var settingsMissingFile: String { isChinese ? "文件不存在" : "File not found" }
     static var settingsReset: String { isChinese ? "恢复默认" : "Restore Defaults" }
     static var settingsResetHelp: String { isChinese ? "恢复 CPU 告警、关注进程和测速地址的默认值（不动 OpenVPN）。" : "Restores CPU, watched-process and latency defaults (OpenVPN untouched)." }
-    static var settingsLiveNote: String { isChinese ? "修改即时生效。" : "Changes apply immediately." }
+    static var settingsLiveNote: String { isChinese ? "数值即时生效；列表在离开输入框或关窗时保存。" : "Values apply immediately; lists save when you leave the box or close the window." }
 }

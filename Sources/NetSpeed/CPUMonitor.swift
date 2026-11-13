@@ -19,6 +19,7 @@ class CPUMonitor {
     // CPUGuard integration
     // 阈值、持续时长、忽略/关注名单来自设置窗口，每次读取即时生效。
     private let prefs: Preferences
+    private let notifier = NotificationHelper()
     var cpuThreshold: Double { prefs.cpuThreshold }
     var sustainedSeconds: Int { prefs.sustainedSeconds }
     let alertCooldown: TimeInterval = 300
@@ -114,14 +115,7 @@ class CPUMonitor {
     }
 
     private func sendNotification(title: String, message: String) {
-        let escapedTitle = title.replacingOccurrences(of: "\"", with: "\\\"")
-        let escapedMessage = message.replacingOccurrences(of: "\"", with: "\\\"")
-        let script = "display notification \"\(escapedMessage)\" with title \"\(escapedTitle)\" sound name \"Sosumi\""
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-        try? process.run()
-        process.waitUntilExit()
+        notifier.send(title: title, message: message)
     }
 
     // MARK: - CPU Reading
