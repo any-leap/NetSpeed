@@ -17,14 +17,16 @@ class CPUMonitor {
     var topProcesses: [TopProcess] = []
 
     // CPUGuard integration
-    let cpuThreshold: Double = 50.0
-    let sustainedSeconds: Int = 30
+    // 阈值、持续时长、忽略/关注名单来自设置窗口，每次读取即时生效。
+    private let prefs: Preferences
+    var cpuThreshold: Double { prefs.cpuThreshold }
+    var sustainedSeconds: Int { prefs.sustainedSeconds }
     let alertCooldown: TimeInterval = 300
-    let ignoredProcesses: Set<String> = [
-        "WindowServer", "kernel_task", "Claude", "claude",
-        "Spotlight", "mds", "mds_stores", "mdworker", "NetSpeed",
-    ]
-    let watchedProcesses: [String] = ["bird"]
+    var watchedProcesses: [String] { prefs.watchedProcesses }
+
+    init(prefs: Preferences = .shared) {
+        self.prefs = prefs
+    }
 
     private var prevCPUInfo: host_cpu_load_info?
     private let lister = ProcessLister()
@@ -44,18 +46,21 @@ class CPUMonitor {
         let allProcs = readTopProcesses(count: 200)
         var activePids: Set<Int> = []
         var abnormal: [TopProcess] = []
+        let threshold = cpuThreshold
+        let ignoredProcesses = Set(prefs.ignoredProcesses)
+        let samplesNeeded = sustainedSeconds / 10
 
         for proc in allProcs {
             activePids.insert(proc.pid)
             if ignoredProcesses.contains(proc.name) { continue }
 
-            if proc.cpu >= cpuThreshold {
+            if proc.cpu >= threshold {
                 sustainedCounts[proc.pid, default: 0] += 1
                 let count = sustainedCounts[proc.pid]!
 
                 abnormal.append(proc)
 
-                if count >= sustainedSeconds / 10 {
+                if count >= samplesNeeded {
                     if let lastTime = lastAlertTime[proc.name],
                        Date().timeIntervalSince(lastTime) < alertCooldown {
                         continue
@@ -83,10 +88,10 @@ class CPUMonitor {
             let alive = isProcessRunning(name: name)
             if !alive {
                 if lastAlertTime["__watch_\(name)"] == nil {
-                    addAlert("\(name) is NOT running — iCloud sync may be affected")
+                    addAlert(L10n.watchedNotRunningAlert(name))
                     sendNotification(
-                        title: "CPU Guard: \(name) not running",
-                        message: "\(name) process is not running. iCloud sync may be affected."
+                        title: L10n.watchedNotRunningTitle(name),
+                        message: L10n.watchedNotRunningMessage(name)
                     )
                     lastAlertTime["__watch_\(name)"] = Date()
                 }

@@ -17,6 +17,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var latencyChartIntlSection: LatencyChartSection!
     private var menu: NSMenu
     private var guardTimer: Timer?
+    private var prefsObserver: NSObjectProtocol?
     private var menuIsOpen = false
     private var networkChartSection: NetworkChartSection!
     private var watchedSection: WatchedProcessesSection!
@@ -39,16 +40,9 @@ class StatusBarController: NSObject, NSMenuDelegate {
         trafficMonitor = TrafficMonitor()
         memMonitor = MemoryMonitor()
         vpnMonitor = VPNMonitor()
-        latencyMonitorCN = LatencyMonitor(name: "mainland", targets: [
-            "https://www.baidu.com/favicon.ico",
-            "https://www.taobao.com/favicon.ico",
-            "https://www.qq.com/favicon.ico",
-        ])
-        latencyMonitorIntl = LatencyMonitor(name: "overseas", targets: [
-            "https://www.gstatic.com/generate_204",
-            "https://www.cloudflare.com/cdn-cgi/trace",
-            "https://www.github.com/favicon.ico",
-        ])
+        let prefs = Preferences.shared
+        latencyMonitorCN = LatencyMonitor(name: "mainland", targets: prefs.latencyTargetsCN)
+        latencyMonitorIntl = LatencyMonitor(name: "overseas", targets: prefs.latencyTargetsIntl)
         menu = NSMenu()
 
         super.init()
@@ -117,6 +111,15 @@ class StatusBarController: NSObject, NSMenuDelegate {
             if self.menuIsOpen { self.refreshLiveViews() }
         }
         quotaMonitor.start()
+
+        // 设置窗口改了测速地址 → 下一轮起用新地址。CPU 相关设置由 CPUMonitor 每次直接读取。
+        prefsObserver = NotificationCenter.default.addObserver(
+            forName: Preferences.didChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            self.latencyMonitorCN.setTargets(prefs.latencyTargetsCN)
+            self.latencyMonitorIntl.setTargets(prefs.latencyTargetsIntl)
+        }
 
         menu.delegate = self
         statusItem.menu = menu
@@ -226,6 +229,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
     deinit {
         guardTimer?.invalidate()
+        if let prefsObserver { NotificationCenter.default.removeObserver(prefsObserver) }
     }
 }
 
@@ -233,13 +237,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusBar: StatusBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.mainMenu = Self.makeMainMenu()
         statusBar = StatusBarController()
+    }
+
+    /// 菜单栏应用不显示主菜单，但设置窗口里的文本框要靠它才能响应
+    /// ⌘C/⌘V/⌘X/⌘A/⌘Z 和 ⌘W。
+    private static func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: L10n.quit, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+        main.addItem(editItem)
+
+        let windowItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowItem.submenu = windowMenu
+        main.addItem(windowItem)
+
+        return main
     }
 }
 
 // 纯 AppKit 入口，不用 SwiftUI App：SwiftUI 的 App 至少要一个 Scene，之前塞的空
 // `Settings { EmptyView() }` 会被系统窗口恢复在开机/登录时弹出一个空白
-// "NetSpeed Settings" 窗口。菜单栏应用不需要任何窗口。
+// "NetSpeed Settings" 窗口。设置窗口改由菜单「设置…」按需创建，见 SettingsWindow.swift。
 @main
 enum NetSpeedMain {
     static func main() {

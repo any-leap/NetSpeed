@@ -89,4 +89,38 @@ extension L10n {
     static var lidCancel: String { isChinese ? "取消" : "Cancel" }
     static var lidError: String { isChinese ? "无法切换合盖保持运行" : "Could Not Change Closed-Lid Mode" }
 
+    // 关注进程告警（名单可在设置里改，文案不再假定是 iCloud 的 bird）
+    static func watchedNotRunningAlert(_ name: String) -> String { isChinese ? "\(name) 未运行" : "\(name) is NOT running" }
+    static func watchedNotRunningTitle(_ name: String) -> String { isChinese ? "关注进程未运行：\(name)" : "Watched process not running: \(name)" }
+    static func watchedNotRunningMessage(_ name: String) -> String { isChinese ? "关注列表中的 \(name) 进程没有在运行。" : "\(name), on your watch list, is not running." }
+
+    // 设置窗口
+    static var settingsMenuItem: String { isChinese ? "设置…" : "Settings…" }
+    static var settingsWindowTitle: String { isChinese ? "NetSpeed 设置" : "NetSpeed Settings" }
+    static var settingsCPUSection: String { isChinese ? "CPU 告警" : "CPU Alerts" }
+    static var settingsThreshold: String { isChinese ? "告警阈值" : "Alert threshold" }
+    static var settingsThresholdHelp: String { isChinese ? "单个进程 CPU 占用超过此值即标为异常（多核可超过 100%）。" : "A process above this CPU usage is flagged as abnormal (can exceed 100% on multi-core)." }
+    static var settingsSustained: String { isChinese ? "持续多久才通知" : "Notify after sustained for" }
+    static func seconds(_ n: Int) -> String { isChinese ? "\(n) 秒" : "\(n)s" }
+    static var settingsIgnored: String { isChinese ? "忽略的进程" : "Ignored processes" }
+    static var settingsIgnoredHelp: String { isChinese ? "每行一个进程名，这些进程不做 CPU 告警。" : "One process name per line; never flagged for CPU." }
+    static var settingsWatchedSection: String { isChinese ? "关注进程" : "Watched Processes" }
+    static var settingsWatchedHelp: String { isChinese ? "每行一个进程名。进程消失时发通知，并在菜单顶部显示存活状态。留空则不关注。" : "One process name per line. Notifies when one disappears and shows its status at the top of the menu. Leave empty to disable." }
+    static var settingsLatencySection: String { isChinese ? "延迟测速地址" : "Latency Targets" }
+    static var settingsLatencyHelp: String { isChinese ? "每行一个 https 地址，每轮取最快的一个。必须是 https：TLS 握手绕不过 Clash TUN，才能测到真实延迟。" : "One https URL per line; the fastest one wins each round. Must be https so Clash TUN cannot short-circuit the measurement." }
+    static func settingsInvalidURLs(_ list: [String]) -> String { (isChinese ? "以下地址无效，未保存：" : "Invalid, not saved: ") + list.joined(separator: ", ") }
+    static var settingsNeedOneURL: String { isChinese ? "至少需要一个地址，未保存。" : "At least one URL is required; not saved." }
+    static var settingsOpenVPNSection: String { "OpenVPN" }
+    static var settingsOpenVPNConfig: String { isChinese ? "配置文件 (.ovpn)" : "Config (.ovpn)" }
+    static var settingsOpenVPNAuth: String { isChinese ? "账号密码文件" : "Credentials file" }
+    static var settingsOpenVPNHelp: String { isChinese ? "选了配置文件后，菜单里才会出现连接/断开按钮。" : "Connect/Disconnect appears in the menu once a config is set." }
+    static var settingsNotSet: String { isChinese ? "未设置" : "Not set" }
+    static var settingsChoose: String { isChinese ? "选择…" : "Choose…" }
+    static var settingsClear: String { isChinese ? "清除" : "Clear" }
+    static var settingsUseDefault: String { isChinese ? "用默认" : "Use Default" }
+    static var settingsDefaultSuffix: String { isChinese ? "（默认）" : " (default)" }
+    static var settingsMissingFile: String { isChinese ? "文件不存在" : "File not found" }
+    static var settingsReset: String { isChinese ? "恢复默认" : "Restore Defaults" }
+    static var settingsResetHelp: String { isChinese ? "恢复 CPU 告警、关注进程和测速地址的默认值（不动 OpenVPN）。" : "Restores CPU, watched-process and latency defaults (OpenVPN untouched)." }
+    static var settingsLiveNote: String { isChinese ? "修改即时生效。" : "Changes apply immediately." }
 }

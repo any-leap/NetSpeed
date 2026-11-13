@@ -6,7 +6,7 @@ final class LatencyMonitor: NSObject, URLSessionTaskDelegate {
     }
 
     let name: String
-    let targets: [Target]
+    private(set) var targets: [Target]
     let maxHistory: Int
 
     private(set) var history: [Double?] = []
@@ -45,6 +45,13 @@ final class LatencyMonitor: NSObject, URLSessionTaskDelegate {
     deinit {
         stop()
         session.invalidateAndCancel()
+    }
+
+    /// 设置里改了测速地址时调用（主线程）。下一次 tick 起生效，历史曲线保留。
+    func setTargets(_ urls: [String]) {
+        let parsed = urls.compactMap { URL(string: $0).map(Target.init) }
+        guard !parsed.isEmpty else { return }
+        targets = parsed
     }
 
     func start() {

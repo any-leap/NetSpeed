@@ -10,6 +10,10 @@ final class QuitSection: MenuSection {
     var structureSignature: String { "Q" }
 
     func addItems(to menu: NSMenu) -> Bool {
+        let settingsItem = NSMenuItem(title: L10n.settingsMenuItem, action: #selector(MenuActions.openSettings), keyEquivalent: ",")
+        settingsItem.target = actions
+        menu.addItem(settingsItem)
+
         let quitItem = NSMenuItem(title: L10n.quit, action: #selector(MenuActions.quit), keyEquivalent: "q")
         quitItem.target = actions
         menu.addItem(quitItem)

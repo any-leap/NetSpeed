@@ -11,9 +11,10 @@ final class WatchedProcessesSection: MenuSection {
 
     var structureSignature: String {
         let procs = cpuMonitor.readTopProcesses(count: 500)
+        // 名单可在设置里改，签名带上名字，改名单也会触发重建。
         return cpuMonitor.watchedProcesses.map { name in
-            procs.contains(where: { $0.name == name }) ? "1" : "0"
-        }.joined()
+            name + (procs.contains(where: { $0.name == name }) ? "1" : "0")
+        }.joined(separator: ",")
     }
 
     func addItems(to menu: NSMenu) -> Bool {

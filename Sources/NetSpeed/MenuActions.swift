@@ -41,6 +41,10 @@ final class MenuActions: NSObject {
         vpnController.toggle()
     }
 
+    @objc func openSettings() {
+        SettingsWindowController.shared.show()
+    }
+
     @objc func quit() {
         NSApplication.shared.terminate(nil)
     }
